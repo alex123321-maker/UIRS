@@ -6,7 +6,7 @@
     ```
 - Для сервера:
     ```
-   docker compose -f docker-compose.dev.yml up --build
+   docker compose -f docker-compose.prod.yml up --build
     ```
  >[!NOTE]
  > Чтобы подключиться к бд при разработке с локальной машины нужно указывать порт, который указан в `docker-compose.dev.yml` у сервиса `db` на первом месте:
