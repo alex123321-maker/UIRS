@@ -13,6 +13,8 @@ class ProdAppSettings(AppSettings):
 
     # back-end app settings
     secret_key: SecretStr = SecretStr("secret-prod")
+    db_url: PostgresDsn | None = None
+
     logging_level: int = logging.INFO
 
     def __init__(self, **kwargs):
