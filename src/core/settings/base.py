@@ -1,5 +1,6 @@
 from enum import Enum
 
+from pydantic import PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,12 +10,9 @@ class AppEnvTypes(Enum):
 
 
 class BaseAppSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict()
 
     app_env: AppEnvTypes = AppEnvTypes.dev
 
-    postgres_user: str
-    postgres_password: str
-    postgres_db: str
-    postgres_port: int
-    listen_addresses: str
+    db_url: PostgresDsn | None = None
+

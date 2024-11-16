@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      APP_ENV: dev
+      DB_URL: postgresql+asyncpg://postgres:postgres@db:5432/mdp
+    volumes:
+      - .:/app
+      - /app/__pycache__
+  db:
+    image: postgres:15
+    container_name: postgres_db_dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mdp
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+
+volumes:
+  postgres_data_dev:
