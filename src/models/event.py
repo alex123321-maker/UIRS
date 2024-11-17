@@ -54,7 +54,6 @@ class IntervalEmployee(Base):
     photo = Column(String)
 
     interval = relationship("VisitInterval", back_populates="employees")
-
     employee = relationship("Employee", back_populates="visit_intervals")
 
 

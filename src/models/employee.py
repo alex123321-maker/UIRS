@@ -29,7 +29,8 @@ class Employee(Base):
     position = relationship("Position", back_populates="employees")
     department = relationship("Department", back_populates="employees")
     planned_participations = relationship("PlannedParticipant", back_populates="employee")
-    visits = relationship("Visit", back_populates="employee")
+    visit_intervals = relationship("IntervalEmployee", back_populates="employee")
+
 
 Position.employees = relationship("Employee", order_by=Employee.id, back_populates="position")
 Department.employees = relationship("Employee", order_by=Employee.id, back_populates="department")

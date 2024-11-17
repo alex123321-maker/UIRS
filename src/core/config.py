@@ -14,6 +14,5 @@ environments: dict[AppEnvTypes, type[AppSettings]] = {
 @lru_cache
 def get_app_settings() -> AppSettings:
     app_env = BaseAppSettings().app_env
-    print(app_env)
     config = environments[app_env]
     return config()
