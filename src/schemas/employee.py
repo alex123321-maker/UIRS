@@ -3,7 +3,7 @@ from typing import List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.constant import SUCCESS_DELETE_EMPLOYEE
+from src.core.constant import SUCCESS_DELETE_EMPLOYEE, SUCCESS_DELETE_PHOTO
 
 
 class DepartmentInfo(BaseModel):
@@ -12,6 +12,13 @@ class DepartmentInfo(BaseModel):
     )
     id: int
     name: str = Field(...,description='Название отдела')
+
+class PhotoInfo(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+    id: int
+    path: str = Field(...,description='Ссылка на фото')
 
 class PositionInfo(BaseModel):
     model_config = ConfigDict(
@@ -40,6 +47,9 @@ class EmployeeInfo(EmployeeBase):
     department: DepartmentInfo= Field(...,description='Отдел сотрудника')
     position: PositionInfo = Field(...,description='Должность сотрудника')
 
+class EmployeeInfoPhoto(EmployeeInfo):
+    photos: List[PhotoInfo] = Field(..., description="Фотографии сотрудника")
+
 class EmployeeUpdate(BaseModel):
     name: str | None = Field(None, description="Имя сотрудника")
     surname: str | None = Field(None, description="Фамилия сотрудника")
@@ -49,6 +59,9 @@ class EmployeeUpdate(BaseModel):
 
 class EmployeeDeleteResponse(BaseModel):
     message: str = Field(..., example=SUCCESS_DELETE_EMPLOYEE)
+
+class PhotoDeleteResponse(BaseModel):
+    message: str = Field(..., example=SUCCESS_DELETE_PHOTO)
 
 
 class PaginatedEmployeeResponse(BaseModel):

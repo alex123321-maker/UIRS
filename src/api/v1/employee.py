@@ -4,15 +4,16 @@ from typing import Annotated, List
 from fastapi import HTTPException, Depends, APIRouter, Form, Query, Path, UploadFile, File, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constant import FAIL_VALIDATION_MATCHED_EMPLOYEE, SUCCESS_DELETE_EMPLOYEE
+from src.core.constant import FAIL_VALIDATION_MATCHED_EMPLOYEE, SUCCESS_DELETE_EMPLOYEE, SUCCESS_DELETE_PHOTO
 from src.services.employee import get_or_create_department, get_or_create_position, create_employee, \
-    get_all_departments, get_all_positions, update_employee_partial, delete_employee_service, get_employees_with_count
+    get_all_departments, get_all_positions, update_employee_partial, delete_employee_service, get_employees_with_count, \
+    add_employee_photo_to_db, delete_employee_photo_from_db, get_employee_from_db
 from starlette.status import HTTP_201_CREATED, HTTP_200_OK, HTTP_404_NOT_FOUND, HTTP_204_NO_CONTENT
 
 from src.api.dependencies.auth import get_current_user
 from src.api.dependencies.database import get_session
 from src.schemas.employee import EmployeeInfo, EmployeeCreate, PositionInfo, DepartmentInfo, EmployeeUpdate, \
-    EmployeeDeleteResponse, PaginatedEmployeeResponse
+    EmployeeDeleteResponse, PaginatedEmployeeResponse, EmployeeInfoPhoto, PhotoDeleteResponse
 from src.schemas.user import UserFromDB
 
 router = APIRouter()
@@ -63,7 +64,21 @@ async def list_employees(
         position=position,
     )
 
-@router.post("/", response_model=EmployeeInfo, status_code=HTTP_201_CREATED)
+@router.get("/{employee_id}", response_model=EmployeeInfoPhoto, status_code=HTTP_200_OK)
+async def get_employee(
+    auth_user: Annotated[UserFromDB, Depends(get_current_user)],
+    employee_id: int = Path(..., description="Идентификатор сотрудника"),
+    db: AsyncSession = Depends(get_session),
+):
+    """
+    Получить информацию о сотруднике.
+    """
+    return await get_employee_from_db(
+        db=db,
+        employee_id=employee_id,
+    )
+
+@router.post("/", response_model=EmployeeInfoPhoto, status_code=HTTP_201_CREATED)
 async def create_new_employee(
     auth_user: Annotated[UserFromDB, Depends(get_current_user)],
     name: str = Form(...),
@@ -71,7 +86,7 @@ async def create_new_employee(
     patronymic: str = Form(None),
     department: str = Form(...),
     position: str = Form(...),
-    files: List[UploadFile] | None = File(...),
+    files: List[UploadFile] | None = File(None),
     db: AsyncSession = Depends(get_session),
 ):
     # Создание объекта EmployeeCreate вручную
@@ -118,3 +133,24 @@ async def remove_employee(
     if not success:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=FAIL_VALIDATION_MATCHED_EMPLOYEE)
     return EmployeeDeleteResponse(message=SUCCESS_DELETE_EMPLOYEE)
+
+@router.post("/{employee_id}/photos", response_model=EmployeeInfoPhoto, status_code=201)
+async def add_photo(
+    auth_user: Annotated[UserFromDB, Depends(get_current_user)],
+    employee_id: int,
+    file: UploadFile,
+    db: AsyncSession = Depends(get_session)
+):
+    photo = await add_employee_photo_to_db(db, employee_id, file)
+
+    return photo
+
+@router.delete("/photos/{photo_id}", response_model=PhotoDeleteResponse, status_code=200)
+async def delete_photo(
+    auth_user: Annotated[UserFromDB, Depends(get_current_user)],
+    photo_id: int,
+    db: AsyncSession = Depends(get_session)
+):
+    photo = await delete_employee_photo_from_db(db, photo_id)
+
+    return PhotoDeleteResponse(message=SUCCESS_DELETE_PHOTO)

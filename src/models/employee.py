@@ -30,7 +30,7 @@ class Employee(Base):
     department = relationship("Department", back_populates="employees")
     planned_participations = relationship("PlannedParticipant", back_populates="employee")
     visit_intervals = relationship("IntervalEmployee", back_populates="employee")
-    photos = relationship("EmployeePhoto", back_populates="employee", cascade="all,delete")
+    photos = relationship("EmployeePhoto", back_populates="employee", cascade="all,delete-orphan")
 
 Position.employees = relationship("Employee", order_by=Employee.id, back_populates="position")
 Department.employees = relationship("Employee", order_by=Employee.id, back_populates="department")
@@ -46,4 +46,4 @@ class EmployeePhoto(Base):
     employee = relationship("Employee", back_populates="photos")
 
 
-Employee.photos = relationship("EmployeePhoto", order_by=EmployeePhoto.id, back_populates="employee")
+Employee.photos = relationship("EmployeePhoto", order_by=EmployeePhoto.id, back_populates="employee",cascade="all, delete")

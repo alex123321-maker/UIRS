@@ -9,9 +9,11 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql.functions import count
 
+from src.core.constant import FAIL_VALIDATION_MATCHED_USER_ID, FAIL_VALIDATION_MATCHED_PHOTO_ID
 from src.models import Employee, Department, Position, EmployeePhoto
 from src.schemas.employee import EmployeeCreate, EmployeeInfo, PositionInfo, DepartmentInfo, EmployeeUpdate, \
-    PaginatedEmployeeResponse
+    PaginatedEmployeeResponse, PhotoInfo, EmployeeInfoPhoto
+
 
 async def cleanup_unused_department_or_position(db: AsyncSession):
     """
@@ -66,7 +68,7 @@ async def create_employee(
     db: AsyncSession,
     employee_data: EmployeeCreate,
     files: List[UploadFile],
-) -> EmployeeInfo:
+) -> EmployeeInfoPhoto:
     department = await get_or_create_department(db, employee_data.department)
     position = await get_or_create_position(db, employee_data.position)
 
@@ -80,33 +82,38 @@ async def create_employee(
     db.add(new_employee)
     await db.commit()
     await db.refresh(new_employee)
+    photos = []
 
-    # Обработка изображений
-    upload_dir = Path("src/media/employees") / str(new_employee.id)
-    upload_dir.mkdir(parents=True, exist_ok=True)
+    if files:
+        # Обработка изображений
+        upload_dir = Path("media/employees") / str(new_employee.id)
+        upload_dir.mkdir(parents=True, exist_ok=True)
 
-    for index, file in enumerate(files, start=1):
-        file_extension = file.filename.split('.')[-1]
-        file_path = upload_dir / f"{index}.{file_extension}"
+        for index, file in enumerate(files, start=1):
+            file_extension = file.filename.split('.')[-1]
+            file_path = upload_dir / f"{index}.{file_extension}"
 
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+            with open(file_path, "wb") as f:
+                content = await file.read()
+                f.write(content)
 
-        photo = EmployeePhoto(photo=str(file_path), employee_id=new_employee.id)
-        db.add(photo)
+            photo = EmployeePhoto(photo=str(file_path), employee_id=new_employee.id)
+            db.add(photo)
+            await db.flush()
+            photos.append(PhotoInfo(id=photo.id, path=str(file_path)))  # Добавляем в список
 
 
     await db.commit()
     await db.refresh(new_employee, attribute_names=["photos", "department", "position"])
 
-    return EmployeeInfo(
+    return EmployeeInfoPhoto(
         id=new_employee.id,
         name=new_employee.name,
         surname=new_employee.surname,
         patronymic=new_employee.patronymic,
         department=DepartmentInfo.model_validate(new_employee.department),
         position=PositionInfo.model_validate(new_employee.position),
+        photos=photos  # Возвращаем список фотографий
     )
 
 async def get_all_departments(db: AsyncSession, search: str | None = None) -> List[DepartmentInfo]:
@@ -185,21 +192,23 @@ async def delete_employee_service(db: AsyncSession, employee_id: int) -> bool | 
     Удалить пользователя по id.
     """
 
+    stmt = select(Employee).where(Employee.id == employee_id).options(joinedload(Employee.photos))
+    result = await db.execute(stmt)
 
-    employee = await db.get(Employee, employee_id)
+    employee = result.unique().scalar_one_or_none()
 
+    if employee is None:
+        return None
     for photo in employee.photos:
         photo_path = Path(photo.photo)
         if photo_path.exists():
             photo_path.unlink()  # Удаляем файл
 
-        # Удаляем папку сотрудника, если она пустая
     employee_folder = Path(f"media/employees/{employee_id}")
     if employee_folder.exists():
         shutil.rmtree(employee_folder)
 
-    if employee is None:
-        return None
+
 
     await db.delete(employee)
     await db.commit()
@@ -251,4 +260,103 @@ async def get_employees_with_count(
     return PaginatedEmployeeResponse(
         total=total_count,
         employees=[EmployeeInfo.model_validate(employee) for employee in employees],
+    )
+async def add_employee_photo_to_db(db: AsyncSession, employee_id: int, file: UploadFile) -> EmployeeInfoPhoto:
+    # Проверяем, существует ли сотрудник
+    stmt = (
+        select(Employee)
+        .where(Employee.id == employee_id)
+        .options(
+            joinedload(Employee.photos),  # Подгружаем фотографии
+            joinedload(Employee.department),  # Подгружаем департамент
+            joinedload(Employee.position)  # Подгружаем позицию
+        )
+    )
+    result = await db.execute(stmt)
+    employee = result.unique().scalar_one_or_none()
+    if not employee:
+        raise HTTPException(status_code=404, detail=FAIL_VALIDATION_MATCHED_USER_ID)
+
+    # Загружаем файл
+    upload_dir = Path("media/employees") / str(employee_id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    # Определяем следующий номер файла
+    existing_files = list(upload_dir.glob("*"))
+    if existing_files:
+        max_number = max(
+            int(file.stem) for file in existing_files if file.stem.isdigit()
+        )
+    else:
+        max_number = 0
+    next_number = max_number + 1
+
+    # Генерируем имя нового файла
+    file_extension = file.filename.split('.')[-1]
+    file_path = upload_dir / f"{next_number}.{file_extension}"
+
+    # Сохраняем файл
+    with open(file_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+
+    # Сохраняем фото в базу данных
+    photo = EmployeePhoto(photo=str(file_path), employee_id=employee_id)
+    db.add(photo)
+    await db.commit()
+
+    # Обновляем данные сотрудника
+    await db.refresh(employee, attribute_names=["photos"])
+
+    return EmployeeInfoPhoto(
+        id=employee.id,
+        name=employee.name,
+        surname=employee.surname,
+        patronymic=employee.patronymic,
+        department=DepartmentInfo.model_validate(employee.department),
+        position=PositionInfo.model_validate(employee.position),
+        photos=[PhotoInfo(id=p.id, path=p.photo) for p in employee.photos]
+    )
+
+async def delete_employee_photo_from_db(db: AsyncSession, photo_id: int) -> bool:
+    stmt = select(EmployeePhoto).where(EmployeePhoto.id == photo_id)
+    photo = (await db.execute(stmt)).scalar_one_or_none()
+    if not photo:
+        raise HTTPException(status_code=404, detail=FAIL_VALIDATION_MATCHED_PHOTO_ID)
+
+    # Удаляем файл с диска
+    photo_path = Path(photo.photo)
+    if photo_path.exists():
+        photo_path.unlink()
+
+    # Удаляем запись из базы данных
+    await db.delete(photo)
+    await db.commit()
+    return True
+
+
+async def get_employee_from_db(db: AsyncSession, employee_id: int) -> EmployeeInfoPhoto:
+    stmt = (
+        select(Employee)
+        .where(Employee.id == employee_id)
+        .options(
+            joinedload(Employee.photos),       # Подгружаем фотографии
+            joinedload(Employee.department),   # Подгружаем департамент
+            joinedload(Employee.position)      # Подгружаем позицию
+        )
+    )
+    result = await db.execute(stmt)
+    employee = result.unique().scalar_one_or_none()
+
+    if not employee:
+        raise HTTPException(status_code=404, detail=FAIL_VALIDATION_MATCHED_USER_ID)
+
+    return EmployeeInfoPhoto(
+        id=employee.id,
+        name=employee.name,
+        surname=employee.surname,
+        patronymic=employee.patronymic,
+        department=DepartmentInfo.model_validate(employee.department),
+        position=PositionInfo.model_validate(employee.position),
+        photos=[PhotoInfo(id=p.id, path=p.photo) for p in employee.photos]
     )

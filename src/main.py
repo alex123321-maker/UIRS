@@ -31,7 +31,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    _app.mount("/media", StaticFiles(directory="src/media"), name="media")
+    _app.mount("/media", StaticFiles(directory="media"), name="media")
     _app.logger = CustomizeLogger.make_logger(config_path)
     _app.include_router(api_router, prefix=settings.api_v1_prefix)
 

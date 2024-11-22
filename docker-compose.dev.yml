@@ -13,7 +13,7 @@ services:
       APP_ENV: dev
       DB_URL: postgresql+asyncpg://postgres:postgres@db:5432/mdp
     volumes:
-      - .src/media:/app/media
+      - /src/media:/app/media
       - .:/app
   db:
     image: postgres:15
