@@ -234,4 +234,8 @@ docker-compose.yml
 !.env.example
 .db.env
 
+media/*
+!media/.gitkeep
+
+
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,macos,linux

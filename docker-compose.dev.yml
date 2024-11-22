@@ -13,8 +13,8 @@ services:
       APP_ENV: dev
       DB_URL: postgresql+asyncpg://postgres:postgres@db:5432/mdp
     volumes:
+      - .src/media:/app/media
       - .:/app
-      - /app/__pycache__
   db:
     image: postgres:15
     container_name: postgres_db_dev

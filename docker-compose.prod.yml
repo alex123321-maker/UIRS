@@ -7,6 +7,8 @@ services:
       - "8000:8000"
     depends_on:
       - db
+    volumes:
+      - .src/media:/app/media
     environment:
       - APP_ENV=prod
       - DB_URL=postgresql+asyncpg://postgres:postgres@db:5432/mdp

@@ -8,7 +8,7 @@ from fastapi.openapi.docs import (
     get_swagger_ui_oauth2_redirect_html,
 )
 from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel, SecurityScheme as SecuritySchemeModel
-
+from starlette.staticfiles import StaticFiles
 
 from src.api.v1 import api_router
 from src.core import settings
@@ -31,6 +31,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    _app.mount("/media", StaticFiles(directory="src/media"), name="media")
     _app.logger = CustomizeLogger.make_logger(config_path)
     _app.include_router(api_router, prefix=settings.api_v1_prefix)
 

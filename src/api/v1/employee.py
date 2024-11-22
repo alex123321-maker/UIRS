@@ -1,7 +1,7 @@
 from pyexpat.errors import messages
 from typing import Annotated, List
 
-from fastapi import HTTPException, Depends, APIRouter, Form, Query, Path
+from fastapi import HTTPException, Depends, APIRouter, Form, Query, Path, UploadFile, File, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constant import FAIL_VALIDATION_MATCHED_EMPLOYEE, SUCCESS_DELETE_EMPLOYEE
@@ -66,15 +66,28 @@ async def list_employees(
 @router.post("/", response_model=EmployeeInfo, status_code=HTTP_201_CREATED)
 async def create_new_employee(
     auth_user: Annotated[UserFromDB, Depends(get_current_user)],
-    employee_create: EmployeeCreate = Form(...),
+    name: str = Form(...),
+    surname: str = Form(...),
+    patronymic: str = Form(None),
+    department: str = Form(...),
+    position: str = Form(...),
+    files: List[UploadFile] | None = File(...),
     db: AsyncSession = Depends(get_session),
 ):
+    # Создание объекта EmployeeCreate вручную
+    employee_data = EmployeeCreate(
+        name=name,
+        surname=surname,
+        patronymic=patronymic,
+        department=department,
+        position=position,
+    )
     new_employee = await create_employee(
         db=db,
-        employee_data=employee_create,
+        employee_data=employee_data,
+        files=files,
     )
 
-    # Возвращаем данные о сотруднике
     return new_employee
 
 @router.patch("/{employee_id}", response_model=EmployeeInfo)

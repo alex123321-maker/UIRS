@@ -1,13 +1,15 @@
+import shutil
+from pathlib import Path
 from typing import List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 from sqlalchemy.exc import NoResultFound
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql.functions import count
 
-from src.models import Employee, Department, Position
+from src.models import Employee, Department, Position, EmployeePhoto
 from src.schemas.employee import EmployeeCreate, EmployeeInfo, PositionInfo, DepartmentInfo, EmployeeUpdate, \
     PaginatedEmployeeResponse
 
@@ -60,19 +62,14 @@ async def get_or_create_position(db: AsyncSession, position_name: str) -> Positi
         await db.refresh(position)
     return PositionInfo.model_validate(position)
 
-
 async def create_employee(
     db: AsyncSession,
     employee_data: EmployeeCreate,
+    files: List[UploadFile],
 ) -> EmployeeInfo:
-    """
-    Создать нового сотрудника с проверкой отдела и должности.
-    """
     department = await get_or_create_department(db, employee_data.department)
-
     position = await get_or_create_position(db, employee_data.position)
 
-    # Создать сотрудника
     new_employee = Employee(
         name=employee_data.name,
         surname=employee_data.surname,
@@ -84,16 +81,33 @@ async def create_employee(
     await db.commit()
     await db.refresh(new_employee)
 
-    await db.refresh(new_employee, attribute_names=["department", "position"])
+    # Обработка изображений
+    upload_dir = Path("src/media/employees") / str(new_employee.id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    for index, file in enumerate(files, start=1):
+        file_extension = file.filename.split('.')[-1]
+        file_path = upload_dir / f"{index}.{file_extension}"
+
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        photo = EmployeePhoto(photo=str(file_path), employee_id=new_employee.id)
+        db.add(photo)
+
+
+    await db.commit()
+    await db.refresh(new_employee, attribute_names=["photos", "department", "position"])
+
     return EmployeeInfo(
-        id = new_employee.id,
-        name =new_employee.name,
-        surname = new_employee.surname,
-        patronymic = new_employee.patronymic,
+        id=new_employee.id,
+        name=new_employee.name,
+        surname=new_employee.surname,
+        patronymic=new_employee.patronymic,
         department=DepartmentInfo.model_validate(new_employee.department),
         position=PositionInfo.model_validate(new_employee.position),
     )
-
 
 async def get_all_departments(db: AsyncSession, search: str | None = None) -> List[DepartmentInfo]:
     """
@@ -170,7 +184,20 @@ async def delete_employee_service(db: AsyncSession, employee_id: int) -> bool | 
     """
     Удалить пользователя по id.
     """
+
+
     employee = await db.get(Employee, employee_id)
+
+    for photo in employee.photos:
+        photo_path = Path(photo.photo)
+        if photo_path.exists():
+            photo_path.unlink()  # Удаляем файл
+
+        # Удаляем папку сотрудника, если она пустая
+    employee_folder = Path(f"media/employees/{employee_id}")
+    if employee_folder.exists():
+        shutil.rmtree(employee_folder)
+
     if employee is None:
         return None
 
