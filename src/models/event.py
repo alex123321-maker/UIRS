@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, column
 from sqlalchemy.orm import relationship
 from src.models.rwmodel import RWModel as Base
 
@@ -35,7 +35,8 @@ class VisitInterval(Base):
     start_datetime= Column(DateTime)
     end_datetime= Column(DateTime)
 
-    photo = Column(String, nullable=True)
+    max_unregistered = Column(Integer, default=0)
+    max_unregistered_photo = Column(String, nullable=True)
     order = Column(Integer)
 
     employees = relationship("IntervalEmployee", back_populates="interval")

@@ -3,21 +3,14 @@
 # SUCCESS
 SUCCESS_SIGN_IN = "Вы успешно вошли"
 SUCCESS_SIGN_UP = "Вы успешно зарегистрировались"
-SUCCESS_GET_USERS = "Filtered users."
-SUCCESS_MATCHED_USER_ID = "The user who matched with ID."
-SUCCESS_MATCHED_USER_TOKEN = "The user who matched with token."
-SUCCESS_MATCHED_USER_EMAIL = "The user who matched with email."
-SUCCESS_UPDATE_USER = "Updated user data successfully."
-SUCCESS_DELETE_USER = "Deleted user successfully."
+
+SUCCESS_DELETE_EMPLOYEE= "Сотрудник успешно удален."
+SUCCESS_DELETE_USER = "Пользователь успешно удален."
 
 # FAIL
-FAIL_VALIDATION_USER_DUPLICATED = "There is a duplicate user already."
-FAIL_VALIDATION_USER_WRONG_PASSWORD = "Invalid user password."
-FAIL_VALIDATION_USER_DELETED = "The user is deleted."
-FAIL_VALIDATION_MATCHED_USER_TOKEN = "No user matched with token."
-FAIL_VALIDATION_MATCHED_USER_EMAIL = "No user matched with email."
-FAIL_VALIDATION_MATCHED_USER_ID = "No user matched with ID."
-FAIL_VALIDATION_MATCHED_FILTERED_USERS = "There are no user lists matched filter."
+FAIL_VALIDATION_MATCHED_USER_ID = "Нет пользователя с таким ID."
+FAIL_VALIDATION_MATCHED_EMPLOYEE = "Сотрудник не найден."
+
 
 FAIL_USER_ALREADY_EXISTS = "Пользователь уже существует."
 

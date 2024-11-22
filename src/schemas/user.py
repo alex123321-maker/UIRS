@@ -1,6 +1,12 @@
-from pydantic import BaseModel, ConfigDict, constr
+from typing import List
+
+from pydantic import BaseModel, ConfigDict, constr, Field
 from src.core import security
 from enum import Enum
+
+
+from src.core.constant import SUCCESS_DELETE_USER
+
 
 class RoleEnum(str, Enum):
     HR = "HR"
@@ -43,3 +49,11 @@ class UserTokenData(BaseModel):
 
 class UserAuthOutData(UserBase):
     token: UserTokenData | None = None
+
+class UserDeleteResponse(BaseModel):
+    message: str = Field(..., example=SUCCESS_DELETE_USER)
+
+class PaginatedResponse(BaseModel):
+    total: int
+    items: List[UserFromDB]
+
