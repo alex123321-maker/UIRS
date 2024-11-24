@@ -13,6 +13,7 @@ class Event(Base):
     video = Column(String, nullable=True)
 
 
+
 class PlannedParticipant(Base):
     __tablename__ = 'planned_participants'
 
@@ -20,11 +21,11 @@ class PlannedParticipant(Base):
     event_id = Column(Integer, ForeignKey('events.id'))
     employee_id = Column(Integer, ForeignKey('employees.id'))
 
-    event = relationship("Event", back_populates="participants")
-    employee = relationship("Employee", back_populates="planned_participations")
+    event = relationship("Event", back_populates="participants", lazy="joined")
+    employee = relationship("Employee", back_populates="planned_participations", lazy="joined")
 
 
-Event.participants = relationship("PlannedParticipant", order_by=PlannedParticipant.id, back_populates="event")
+Event.participants = relationship("PlannedParticipant", order_by=PlannedParticipant.id, back_populates="event", lazy="joined",)
 
 
 class VisitInterval(Base):

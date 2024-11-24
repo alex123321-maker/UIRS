@@ -26,14 +26,14 @@ class Employee(Base):
     position_id = Column(Integer, ForeignKey('positions.id'))
     department_id = Column(Integer, ForeignKey('departments.id'))
 
-    position = relationship("Position", back_populates="employees")
-    department = relationship("Department", back_populates="employees")
-    planned_participations = relationship("PlannedParticipant", back_populates="employee")
-    visit_intervals = relationship("IntervalEmployee", back_populates="employee")
-    photos = relationship("EmployeePhoto", back_populates="employee", cascade="all,delete-orphan")
+    position = relationship("Position", back_populates="employees", lazy="joined")
+    department = relationship("Department", back_populates="employees", lazy="joined")
+    planned_participations = relationship("PlannedParticipant", back_populates="employee", lazy="joined")
+    visit_intervals = relationship("IntervalEmployee", back_populates="employee", lazy="joined")
+    photos = relationship("EmployeePhoto", back_populates="employee", cascade="all,delete-orphan", lazy="joined")
 
-Position.employees = relationship("Employee", order_by=Employee.id, back_populates="position")
-Department.employees = relationship("Employee", order_by=Employee.id, back_populates="department")
+Position.employees = relationship("Employee", order_by=Employee.id, back_populates="position", lazy="joined")
+Department.employees = relationship("Employee", order_by=Employee.id, back_populates="department", lazy="joined")
 
 
 class EmployeePhoto(Base):
@@ -43,7 +43,7 @@ class EmployeePhoto(Base):
     photo = Column(String)
     employee_id = Column(Integer, ForeignKey('employees.id'))
 
-    employee = relationship("Employee", back_populates="photos")
+    employee = relationship("Employee", back_populates="photos", lazy="joined")
 
 
-Employee.photos = relationship("EmployeePhoto", order_by=EmployeePhoto.id, back_populates="employee",cascade="all, delete")
+Employee.photos = relationship("EmployeePhoto", order_by=EmployeePhoto.id, back_populates="employee",cascade="all, delete", lazy="joined")
