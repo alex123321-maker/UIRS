@@ -1,4 +1,5 @@
 import shutil
+from enum import unique
 from pathlib import Path
 from typing import List
 
@@ -40,7 +41,7 @@ async def get_or_create_department(db: AsyncSession, department_name: str) -> De
     Получить или создать отдел по названию.
     """
     stmt = select(Department).where(Department.name == department_name)
-    department = (await db.execute(stmt)).scalar_one_or_none()
+    department = (await db.execute(stmt)).unique().scalar_one_or_none()
 
     if not department:
         department = Department(name=department_name)
@@ -55,7 +56,7 @@ async def get_or_create_position(db: AsyncSession, position_name: str) -> Positi
     Получить или создать должность по названию.
     """
     stmt = select(Position).where(Position.name == position_name)
-    position = (await db.execute(stmt)).scalar_one_or_none()
+    position = (await db.execute(stmt)).unique().scalar_one_or_none()
 
     if not position:
         position = Position(name=position_name)
