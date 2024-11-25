@@ -124,7 +124,7 @@ async def get_all_departments(db: AsyncSession, search: str | None = None) -> Li
     if search:
         query = query.where(Department.name.ilike(f"%{search}%"))
     result = await db.execute(query)
-    departments = result.scalars().all()
+    departments = result.unique().scalars().all()
 
     # Преобразуем модели в схемы
     return [DepartmentInfo.model_validate(department) for department in departments]
@@ -138,7 +138,7 @@ async def get_all_positions(db: AsyncSession, search: str | None = None) -> List
     if search:
         query = query.where(Position.name.ilike(f"%{search}%"))
     result = await db.execute(query)
-    positions = result.scalars().all()
+    positions = result.unique().scalars().all()
 
     # Преобразуем модели в схемы
     return [PositionInfo.model_validate(position) for position in positions]
@@ -255,7 +255,7 @@ async def get_employees_with_count(
     # Пагинация
     paginated_query = query.offset((page - 1) * limit).limit(limit)
     result = await db.execute(paginated_query)
-    employees = result.scalars().all()
+    employees = result.unique().scalars().all()
 
     return PaginatedEmployeeResponse(
         total=total_count,
