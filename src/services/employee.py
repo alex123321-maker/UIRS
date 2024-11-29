@@ -149,7 +149,7 @@ async def update_employee_partial(db: AsyncSession, employee_id: int, employee_d
     Частично обновить данные сотрудника.
     """
     stmt = select(Employee).where(Employee.id == employee_id)
-    employee = (await db.execute(stmt)).scalar_one_or_none()
+    employee = (await db.execute(stmt)).unique().scalar_one_or_none()
     if not employee:
         return None
 
@@ -321,7 +321,7 @@ async def add_employee_photo_to_db(db: AsyncSession, employee_id: int, file: Upl
 
 async def delete_employee_photo_from_db(db: AsyncSession, photo_id: int) -> bool:
     stmt = select(EmployeePhoto).where(EmployeePhoto.id == photo_id)
-    photo = (await db.execute(stmt)).scalar_one_or_none()
+    photo = (await db.execute(stmt)).unique().scalar_one_or_none()
     if not photo:
         raise HTTPException(status_code=404, detail=FAIL_VALIDATION_MATCHED_PHOTO_ID)
 

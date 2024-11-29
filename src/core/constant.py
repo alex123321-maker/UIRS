@@ -16,6 +16,7 @@ FAIL_VALIDATION_MATCHED_EMPLOYEE = "Сотрудник не найден."
 FAIL_USER_ALREADY_EXISTS = "Пользователь уже существует."
 FAIL_VALIDATION_MATCHED_EVENT = "Событие не найдено"
 FAIL_AUTH_CHECK = "Аунтефикация не пройдена."
+FAIL_INVALID_TOKEN = "Неверный токен авторизации."
 FAIL_AUTH_INVALID_TOKEN_PREFIX = "Неверный префикс токена."
 FAIL_AUTH_VALIDATION_CREDENTIAL = "Неверные данные авторизации."
 
