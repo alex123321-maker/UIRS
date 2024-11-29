@@ -26,6 +26,7 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/mdp-back:latest
           load: true
+          no-cache: true
           
       - name: Copy docker-compose.prod.yml to server
         uses: appleboy/scp-action@v0.1.7
