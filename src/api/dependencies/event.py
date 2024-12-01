@@ -15,19 +15,20 @@ async def check_participants(
     db: AsyncSession = Depends(get_session),
 ) -> EventCreate:
     # Запрос к базе данных для проверки существующих ID
-    query = select(Employee.id).where(Employee.id.in_(event.participants))
-    result = await db.execute(query)
-    existing_ids = {row[0] for row in result.fetchall()}
+    if event.participants:
+        query = select(Employee.id).where(Employee.id.in_(event.participants))
+        result = await db.execute(query)
+        existing_ids = {row[0] for row in result.fetchall()}
 
-    # Определяем найденные и не найденные ID
-    found_ids = list(existing_ids)
-    missing_ids = list(set(event.participants) - existing_ids)
-    if missing_ids:
+        # Определяем найденные и не найденные ID
+        found_ids = list(existing_ids)
+        missing_ids = list(set(event.participants) - existing_ids)
+        if missing_ids:
 
-        raise HTTPException(
-            status_code=404,
-            detail=f"Не нашли сотрудников с id: {missing_ids}"
-        )
+            raise HTTPException(
+                status_code=404,
+                detail=f"Не нашли сотрудников с id: {missing_ids}"
+            )
     return event
 
 
