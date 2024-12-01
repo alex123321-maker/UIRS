@@ -31,6 +31,7 @@ class UserInDB(UserBase):
         self.salt = security.generate_salt()
         self.hashed_password = security.get_password_hash(self.salt + password)
 
+
 class UserFromDB(UserBase):
     id: int
 

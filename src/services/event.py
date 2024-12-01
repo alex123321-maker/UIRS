@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 
-from src.models import Event, PlannedParticipant, Employee
+from src.models import Event, PlannedParticipant, Employee, VisitInterval
 from src.schemas.employee import EmployeeInfoPhoto, DepartmentInfo, PositionInfo, PhotoInfo
 from src.schemas.event import EventCreate, EventFullInfo
 
@@ -168,18 +168,40 @@ async def update_event_by_id(
 
 async def delete_event_by_id(event_id: int, db: AsyncSession):
     # Удаляем всех участников, связанных с событием
-    await db.execute(
-        PlannedParticipant.__table__.delete().where(PlannedParticipant.event_id == event_id)
+    result = await db.execute(
+        select(Event)
+        .options(
+            joinedload(Event.visit_intervals).joinedload(VisitInterval.employees)
+        )
+        .where(Event.id == event_id)
     )
+    event = result.scalars().first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Мероприятие не найдено")
 
-    # Удаляем само событие
-    result = await db.execute(select(Event).where(Event.id == event_id))
-    event_to_delete = result.scalars().first()
+    # Удаляем связанные файлы
+    if event.video:
+        try:
+            os.remove(event.video)
+        except FileNotFoundError:
+            pass
 
-    if not event_to_delete:
-        raise HTTPException(status_code=404, detail="Событие не найдено")
+    for interval in event.visit_intervals:
+        if interval.max_unregistered_photo:
+            try:
+                os.remove(interval.max_unregistered_photo)
+            except FileNotFoundError:
+                pass
 
-    await db.delete(event_to_delete)
+        for employee in interval.employees:
+            if employee.photo:
+                try:
+                    os.remove(employee.photo)
+                except FileNotFoundError:
+                    pass
+
+    # Удаляем мероприятие (каскадное удаление связанных записей)
+    await db.delete(event)
     await db.commit()
 
     return EventDeleteResponse(message=SUCCESS_DELETE_EVENT)

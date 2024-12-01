@@ -12,6 +12,22 @@ class Event(Base):
     end_datetime = Column(DateTime)
     video = Column(String, nullable=True)
 
+    visit_intervals = relationship(
+        "VisitInterval",
+        back_populates="event",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="joined"
+    )
+
+    participants = relationship(
+        "PlannedParticipant",
+        back_populates="event",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="joined"
+    )
+
 
 
 class PlannedParticipant(Base):
@@ -25,7 +41,6 @@ class PlannedParticipant(Base):
     employee = relationship("Employee", back_populates="planned_participations", lazy="joined")
 
 
-Event.participants = relationship("PlannedParticipant", order_by=PlannedParticipant.id, back_populates="event", lazy="joined",)
 
 
 class VisitInterval(Base):
@@ -40,19 +55,24 @@ class VisitInterval(Base):
     max_unregistered_photo = Column(String, nullable=True)
     order = Column(Integer)
 
-    employees = relationship("IntervalEmployee", back_populates="interval")
+    employees = relationship(
+        "IntervalEmployee",
+        back_populates="interval",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
-    event = relationship("Event", back_populates="visit_interval")
+    event = relationship("Event", back_populates="visit_intervals")
 
 
-Event.visit_interval = relationship("VisitInterval", order_by=VisitInterval.order, back_populates="event")
 
 class IntervalEmployee(Base):
     __tablename__ = 'interval_employee'
 
     id = Column(Integer, primary_key=True, index=True)
-    employee_id = Column(Integer, ForeignKey('employees.id'))
-    interval_id = Column(Integer, ForeignKey('visitinterval.id'))
+    employee_id = Column(Integer, ForeignKey('employees.id', ondelete="CASCADE"))
+    interval_id = Column(Integer, ForeignKey('visitinterval.id', ondelete="CASCADE"))
+    first_spot_datetime = Column(DateTime)
     photo = Column(String)
 
     interval = relationship("VisitInterval", back_populates="employees")
