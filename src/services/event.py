@@ -9,7 +9,8 @@ from sqlalchemy import or_, and_
 
 from src.core.constant import SUCCESS_DELETE_EVENT
 from src.database.events import logger
-from src.schemas.event import EventCreate, EventFullInfo, EventDeleteResponse, EventInfo, EmployeeFilterRequest
+from src.schemas.event import EventCreate, EventFullInfo, EventDeleteResponse, EventInfo, EmployeeFilterRequest, \
+    EventUpdate
 
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload
@@ -136,24 +137,28 @@ async def get_event_by_id(event_id: int, db: AsyncSession) -> EventFullInfo:
         end_datetime=event_with_data.end_datetime,
         participants=participants,
     )
-
 async def update_event_by_id(
     event_id: int,
-    update_data: dict,
+    update_data: EventUpdate,
     db: AsyncSession
 ) -> EventFullInfo:
     # Получаем событие
     result = await db.execute(select(Event).where(Event.id == event_id))
-    event_to_update = result.scalars().first()
+    event_to_update = result.unique().scalar_one_or_none()
 
     if not event_to_update:
         raise HTTPException(status_code=404, detail="Событие не найдено")
-    try:
-        # Обновляем атрибуты мероприятия
-        for key, value in update_data.items():
-            if hasattr(event_to_update, key):
-                setattr(event_to_update, key, value)
 
+    try:
+        # Применяем обновления
+        update_data_dict = update_data.model_dump(exclude_unset=True)  # Используем model_dump для Pydantic 2
+        for key, value in update_data_dict.items():
+            # Обрабатываем даты, если переданы в формате строки
+            if key in ["start_datetime", "end_datetime"] and isinstance(value, str):
+                value = datetime.strptime(value, "%d.%m.%Y %H:%M")
+            setattr(event_to_update, key, value)  # Обновляем атрибут модели
+
+        # Сохраняем изменения в базе данных
         await db.commit()
         await db.refresh(event_to_update)
 
@@ -163,7 +168,7 @@ async def update_event_by_id(
         await db.rollback()
         raise HTTPException(
             status_code=400,
-            detail=f"{str(e)}",
+            detail=f"Ошибка при обновлении события: {str(e)}"
         )
 
 async def delete_event_by_id(event_id: int, db: AsyncSession):

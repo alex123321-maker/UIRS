@@ -70,12 +70,8 @@ class EventFullInfo(EventBase):
     video: str |None= Field(None, description="Ссылка на видео")
     participants:List[EmployeeInfoPhoto] = Field(...,description="Участники мероприятия")
 
-class EventUpdate(BaseModel):
-    name: Optional[str] = Field(None, description="Название мероприятия")
-    start_datetime: datetime |None= Field(None, description="Дата и время начала мероприятия", example='20.01.2000 12:20')
-    end_datetime: datetime |None= Field(None, description="Дата и время окончания мероприятия", example='20.01.2000 16:00')
-
-
+class EventUpdate(EventBase):
+    pass
 
 class EventDeleteResponse(BaseModel):
     message: str = Field(..., example=SUCCESS_DELETE_EVENT)

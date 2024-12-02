@@ -85,7 +85,7 @@ async def update_event(
     auth_user: UserFromDB = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    return await update_event_by_id(event_id, update_data.model_dump(exclude_unset=True), db)
+    return await update_event_by_id(event_id, update_data, db)
 
 @router.delete("/{event_id}", status_code=HTTP_200_OK)
 async def delete_event(
