@@ -313,6 +313,10 @@ async def add_participant_to_event(event_id: int, employee_id: int, db: AsyncSes
         await db.commit()
         await db.refresh(new_participant)
 
+
+        return True
+
+
     except Exception as e:
         await db.rollback()
         raise HTTPException(

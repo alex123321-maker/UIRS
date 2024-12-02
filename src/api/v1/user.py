@@ -9,7 +9,8 @@ from src.api.dependencies.auth import get_current_user
 from src.schemas.user import UserInCreate, UserBase, UserFromDB, UserDeleteResponse, RoleEnum, PaginatedResponse
 from src.api.dependencies.database import get_session
 from src.services.auth import _get_user_by_login
-from src.services.users import create_user, get_user_by_id, update_user_service, delete_user_service, get_users
+from src.services.users import create_user, get_user_by_id, update_user_service, delete_user_service, get_users, \
+    change_user_password
 from src.core.constant import FAIL_USER_ALREADY_EXISTS, FAIL_VALIDATION_MATCHED_USER_ID, SUCCESS_DELETE_USER
 
 router = APIRouter()
@@ -93,3 +94,32 @@ async def get_me(
     db: AsyncSession = Depends(get_session)
 ):
     return user_in
+
+
+@router.post("/change-password", status_code=status.HTTP_200_OK)
+async def change_password(
+    current_password: str,
+    new_password: str,
+    db: AsyncSession = Depends(get_session),
+    current_user: UserFromDB = Depends(get_current_user),
+):
+    """
+    Эндпоинт для смены пароля пользователя.
+
+    :param current_password: Текущий пароль.
+    :param new_password: Новый пароль.
+    """
+    success = await change_user_password(
+        db=db,
+        user_id=current_user.id,
+        current_password=current_password,
+        new_password=new_password
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неверный пароль"
+        )
+
+    return {"message": "Пароль успешно изменен"}

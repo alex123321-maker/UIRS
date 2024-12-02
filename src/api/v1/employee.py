@@ -1,13 +1,15 @@
+from datetime import datetime
 from pyexpat.errors import messages
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 
 from fastapi import HTTPException, Depends, APIRouter, Form, Query, Path, UploadFile, File, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constant import FAIL_VALIDATION_MATCHED_EMPLOYEE, SUCCESS_DELETE_EMPLOYEE, SUCCESS_DELETE_PHOTO
+from src.schemas.event import EmployeeEvent, EventListResponse, EmployeeEventListResponse, EmployeeEventStatuses
 from src.services.employee import get_or_create_department, get_or_create_position, create_employee, \
     get_all_departments, get_all_positions, update_employee_partial, delete_employee_service, get_employees_with_count, \
-    add_employee_photo_to_db, delete_employee_photo_from_db, get_employee_from_db
+    add_employee_photo_to_db, delete_employee_photo_from_db, get_employee_from_db, get_events_for_employee
 from starlette.status import HTTP_201_CREATED, HTTP_200_OK, HTTP_404_NOT_FOUND, HTTP_204_NO_CONTENT
 
 from src.api.dependencies.auth import get_current_user
@@ -77,7 +79,56 @@ async def get_employee(
         db=db,
         employee_id=employee_id,
     )
+def parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    if value is None:
+        return None
+    try:
+        return datetime.strptime(value, "%d.%m.%Y %H:%M")
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Неверный формат даты. Ожидается формат 'ДД.ММ.ГГГГ ЧЧ:ММ', получено: {value}"
+        )
 
+@router.get("/{employee_id}/events", response_model=EmployeeEventListResponse)
+async def get_employee_activity(
+    employee_id: int = Path(..., description="Идентификатор сотрудника"),
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    page_size: int = Query(10, ge=1, le=100, description="Количество элементов на странице"),
+    search: Optional[str] = Query(None, description="Поиск по названию мероприятия"),
+    date_from: Optional[str] = Query(
+        None,
+        description="Фильтр по начальной дате (формат: ДД.ММ.ГГГГ ЧЧ:ММ)",
+        example="20.01.2000 12:20"
+    ),
+    date_to: Optional[str] = Query(
+        None,
+        description="Фильтр по конечной дате (формат: ДД.ММ.ГГГГ ЧЧ:ММ)",
+        example="21.01.2000 15:30"
+    ),
+    status: Optional[EmployeeEventStatuses] = Query(None, description="Фильтр по статусу"),
+    db: AsyncSession = Depends(get_session),
+):
+    try:
+        # Преобразуем строки в datetime
+        parsed_date_from = parse_datetime(date_from)
+        parsed_date_to = parse_datetime(date_to)
+
+        events_data = await get_events_for_employee(
+            employee_id=employee_id,
+            db=db,
+            page=page,
+            page_size=page_size,
+            search=search,
+            date_from=parsed_date_from,
+            date_to=parsed_date_to,
+            status=status
+        )
+        return events_data
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка получения мероприятий: {str(e)}")
 @router.post("/", response_model=EmployeeInfoPhoto, status_code=HTTP_201_CREATED)
 async def create_new_employee(
     auth_user: Annotated[UserFromDB, Depends(get_current_user)],

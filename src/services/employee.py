@@ -1,19 +1,23 @@
 import shutil
+from datetime import datetime
 from enum import unique
+from operator import and_
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, union_all
 from sqlalchemy.exc import NoResultFound
 from fastapi import HTTPException, UploadFile
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, aliased
 from sqlalchemy.sql.functions import count
 
 from src.core.constant import FAIL_VALIDATION_MATCHED_USER_ID, FAIL_VALIDATION_MATCHED_PHOTO_ID
-from src.models import Employee, Department, Position, EmployeePhoto
+from src.models import Employee, Department, Position, EmployeePhoto, Event, VisitInterval, PlannedParticipant, \
+    IntervalEmployee
 from src.schemas.employee import EmployeeCreate, EmployeeInfo, PositionInfo, DepartmentInfo, EmployeeUpdate, \
     PaginatedEmployeeResponse, PhotoInfo, EmployeeInfoPhoto
+from src.schemas.event import EmployeeEventStatuses
 
 
 async def cleanup_unused_department_or_position(db: AsyncSession):
@@ -361,3 +365,109 @@ async def get_employee_from_db(db: AsyncSession, employee_id: int) -> EmployeeIn
         position=PositionInfo.model_validate(employee.position),
         photos=[PhotoInfo(id=p.id, path=p.photo) for p in employee.photos]
     )
+
+async def get_events_for_employee(
+    employee_id: int,
+    db: AsyncSession,
+    page: int,
+    page_size: int,
+    search: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    status: Optional[str] = None
+):
+    # Запрос событий, где сотрудник является участником
+    participant_query = (
+        select(Event.id)
+        .join(PlannedParticipant, PlannedParticipant.event_id == Event.id)
+        .where(PlannedParticipant.employee_id == employee_id)
+    )
+
+    # Запрос событий, где сотрудник присутствует в VisitInterval
+    visit_query = (
+        select(Event.id)
+        .join(VisitInterval, VisitInterval.event_id == Event.id)
+        .join(IntervalEmployee, IntervalEmployee.interval_id == VisitInterval.id)
+        .where(IntervalEmployee.employee_id == employee_id)
+    )
+
+    # Объединение запросов
+    union_query = union_all(participant_query, visit_query)
+
+    # Основной запрос для событий
+    query = (
+        select(Event)
+        .where(Event.id.in_(union_query))
+        .options(
+            joinedload(Event.participants).joinedload(PlannedParticipant.employee),
+            joinedload(Event.visit_intervals).joinedload(VisitInterval.employees),
+        )
+    )
+
+    # Применяем фильтры
+    if search:
+        query = query.where(Event.name.ilike(f"%{search}%"))
+
+    if date_from or date_to:
+        if date_from and date_to:
+            query = query.where(and_(Event.start_datetime >= date_from, Event.end_datetime <= date_to))
+        elif date_from:
+            query = query.where(Event.start_datetime >= date_from)
+        elif date_to:
+            query = query.where(Event.end_datetime <= date_to)
+
+    # Выполнение основного запроса
+    result = await db.execute(query)
+    events = result.scalars().unique().all()
+
+    # Формирование списка с учетом статусов
+    filtered_events = []
+    for event in events:
+        visited_intervals = []
+        is_participant = any(participant.employee_id == employee_id for participant in event.participants)
+        for interval in event.visit_intervals:
+            first_spot = None
+            for employee in interval.employees:
+                if employee.employee_id == employee_id:
+                    first_spot = employee.first_spot_datetime
+                    break
+            if first_spot:
+                visited_intervals.append({
+                    "interval_id": interval.id,
+                    "start_datetime": interval.start_datetime,
+                    "end_datetime": interval.end_datetime,
+                    "first_spot_datetime": first_spot,
+                })
+
+        # Определяем статус
+        if visited_intervals and not is_participant:
+            event_status = EmployeeEventStatuses.unplanned  # Новый статус
+        elif visited_intervals and event.end_datetime < datetime.now():
+            event_status = EmployeeEventStatuses.visited
+        elif not visited_intervals and event.end_datetime < datetime.now():
+            event_status = EmployeeEventStatuses.missed
+        else:
+            event_status = EmployeeEventStatuses.planned
+
+        # Фильтрация по статусу
+        if (status and event_status == status) or (status is None):
+            filtered_events.append({
+                "id": event.id,
+                "name": event.name,
+                "start_datetime": event.start_datetime,
+                "end_datetime": event.end_datetime,
+                "status": event_status,
+                "intervals": visited_intervals
+            })
+
+    # Подсчет отфильтрованных событий
+    total_count = len(filtered_events)
+
+    # Пагинация
+    paginated_events = filtered_events[(page - 1) * page_size: page * page_size]
+
+    return {
+        "total_count": total_count,
+        "events": paginated_events
+    }
+

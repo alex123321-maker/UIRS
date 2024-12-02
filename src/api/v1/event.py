@@ -56,6 +56,10 @@ async def add_participants_employee(
     db: AsyncSession = Depends(get_session),
 ):
     await add_participant_to_event(event.id, employee_id, db)
+
+    await db.refresh(event)
+
+
     return await get_event_by_id(event.id, db)
 
 

@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from enum import Enum
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator, field_serializer
@@ -49,6 +50,8 @@ class EventBase(BaseModel):
     @field_serializer("start_datetime", "end_datetime")
     def serialize_datetime(self, value: datetime, _info) -> str:
         return value.strftime("%d.%m.%Y %H:%M")
+
+
 
 class EventCreate(EventBase):
     participants: List[int] | None = Field(
@@ -116,3 +119,87 @@ class EventFilterRequest(BaseModel):
 class EventListResponse(BaseModel):
     total_count: int = Field(..., description="Общее количество найденных мероприятий")
     events: List[EventInfo] = Field(..., description="Список мероприятий")
+
+class EmployeeEventStatuses(str, Enum):
+    planned = "planned"
+    missed = "missed"
+    visited = "visited"
+    unplanned = "unplanned"
+
+
+class IntervalInfo(BaseModel):
+    interval_id: int
+    start_datetime: datetime
+    end_datetime: datetime
+
+    @field_validator("start_datetime", "end_datetime", mode="before")
+    def parse_datetime(cls, value):
+        if isinstance(value, datetime):
+            # Если уже datetime, возвращаем как есть
+            return value
+        if isinstance(value, str):
+            # Преобразуем строку в datetime
+            try:
+                return datetime.strptime(value, "%d.%m.%Y %H:%M")
+            except ValueError:
+                raise ValueError("Неверный формат даты. Используйте формат ДД.ММ.ГГГГ ЧЧ:ММ.")
+        raise TypeError("Некорректный тип данных для даты")
+
+    @model_validator(mode="before")
+    def validate_event_dates(cls, values):
+        if isinstance(values, str):
+            try:
+                values = json.loads(values)
+            except json.JSONDecodeError:
+                raise ValueError("Входные данные должны быть в формате JSON.")
+        start = values.get('start_datetime')
+        end = values.get('end_datetime')
+        if start and end and start >= end:
+            raise ValueError("Дата окончания должна быть позже даты начала.")
+        return values
+
+    @field_serializer("start_datetime", "end_datetime")
+    def serialize_datetime(self, value: datetime, _info) -> str:
+        return value.strftime("%d.%m.%Y %H:%M")
+
+class EmployeeEvent(BaseModel):
+    id: int
+    name: str
+    start_datetime: datetime
+    end_datetime: datetime
+    status: EmployeeEventStatuses
+    intervals: List[IntervalInfo]
+
+    @field_validator("start_datetime", "end_datetime", mode="before")
+    def parse_datetime(cls, value):
+        if isinstance(value, datetime):
+            # Если уже datetime, возвращаем как есть
+            return value
+        if isinstance(value, str):
+            # Преобразуем строку в datetime
+            try:
+                return datetime.strptime(value, "%d.%m.%Y %H:%M")
+            except ValueError:
+                raise ValueError("Неверный формат даты. Используйте формат ДД.ММ.ГГГГ ЧЧ:ММ.")
+        raise TypeError("Некорректный тип данных для даты")
+
+    @model_validator(mode="before")
+    def validate_event_dates(cls, values):
+        if isinstance(values, str):
+            try:
+                values = json.loads(values)
+            except json.JSONDecodeError:
+                raise ValueError("Входные данные должны быть в формате JSON.")
+        start = values.get('start_datetime')
+        end = values.get('end_datetime')
+        if start and end and start >= end:
+            raise ValueError("Дата окончания должна быть позже даты начала.")
+        return values
+
+    @field_serializer("start_datetime", "end_datetime")
+    def serialize_datetime(self, value: datetime, _info) -> str:
+        return value.strftime("%d.%m.%Y %H:%M")
+
+class EmployeeEventListResponse(BaseModel):
+    total_count: int
+    events: List[EmployeeEvent]

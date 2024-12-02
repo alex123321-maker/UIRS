@@ -3,8 +3,10 @@ from typing import List, Tuple
 from enum import Enum
 
 from sqlalchemy import select, func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.security import verify_password
 from src.models.user import User
 from src.schemas.user import UserInCreate, UserBase, UserFromDB, RoleEnum
 
@@ -86,6 +88,39 @@ async def delete_user_service(db: AsyncSession, user_id: int) -> bool | None:
     await db.commit()
     return True
 
+async def change_user_password(
+    db: AsyncSession,
+    user_id: int,
+    current_password: str,
+    new_password: str
+) -> bool:
+    """
+    Изменяет пароль пользователя, если текущий пароль указан корректно.
 
+    :param db: Асинхронная сессия базы данных.
+    :param user_id: Идентификатор пользователя.
+    :param current_password: Текущий пароль.
+    :param new_password: Новый пароль.
+    :return: True, если пароль успешно изменен, иначе False.
+    """
+    try:
+        user: User | None = await db.get(User, user_id)
+        if not user:
+            return False
+
+        # Проверяем текущий пароль
+        if not verify_password(user.salt + current_password, user.hashed_password):
+            return False
+
+        # Обновляем пароль
+        user.change_password(new_password)
+        await db.commit()
+        await db.refresh(user)
+
+        return True
+    except SQLAlchemyError as e:
+        # Логирование ошибок
+        print(f"Database error: {e}")
+        return False
 
 
