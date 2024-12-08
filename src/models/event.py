@@ -60,9 +60,10 @@ class VisitInterval(Base):
         back_populates="interval",
         cascade="all, delete-orphan",
         passive_deletes=True,
+        lazy="joined"
     )
 
-    event = relationship("Event", back_populates="visit_intervals")
+    event = relationship("Event", back_populates="visit_intervals",lazy="joined")
 
 
 

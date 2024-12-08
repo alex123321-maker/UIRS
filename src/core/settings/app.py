@@ -17,7 +17,7 @@ class AppSettings(BaseAppSettings):
     openapi_url: str = "/openapi.json"
     redoc_url: str = "/redoc"
     title: str = "FastAPI example application"
-    version: str = "0.4.0"
+    version: str = "0.5.0"
 
     # back-end app settings
     api_v1_prefix: str = "/api/v1"

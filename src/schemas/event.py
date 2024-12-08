@@ -128,6 +128,10 @@ class EmployeeEventStatuses(str, Enum):
 
 
 class IntervalInfo(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
     interval_id: int
     start_datetime: datetime
     end_datetime: datetime
@@ -201,5 +205,6 @@ class EmployeeEvent(BaseModel):
         return value.strftime("%d.%m.%Y %H:%M")
 
 class EmployeeEventListResponse(BaseModel):
+
     total_count: int
     events: List[EmployeeEvent]
