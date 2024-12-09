@@ -11,17 +11,17 @@ services:
       - /src/media:/app/media
     environment:
       - APP_ENV=prod
-      - DB_URL=postgresql+asyncpg://postgres:postgres@db:5432/mdp
+      - DB_URL=postgresql+asyncpg://mdp-user:VuILDIB3@db:5432/mdp
 
   db:
     image: postgres:15
     container_name: postgres_db
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: mdp-user
+      POSTGRES_PASSWORD: VuILDIB3
       POSTGRES_DB: mdp
     ports:
-      - "5432:5432"
+      - "1337:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
