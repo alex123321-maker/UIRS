@@ -39,7 +39,7 @@ async def create_interval_and_add_employee(
     )
 
     # Вычисляем начало и конец интервала
-    interval_start = event_start_datetime + timedelta(minutes=5 * (visit_info.order-1))
+    interval_start = event_start_datetime + timedelta(minutes=5 * (visit_info.order))
     interval_end = interval_start + timedelta(minutes=5)
     visit_time = interval_start + visit_info.visit_time
 
