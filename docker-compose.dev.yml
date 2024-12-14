@@ -1,5 +1,9 @@
 version: '3.8'
 
+networks:
+  network:  
+    driver: bridge
+
 services:
   fastapi:
     build:
@@ -15,6 +19,8 @@ services:
     volumes:
       - /src/media:/app/media
       - .:/app
+    networks:
+      - network 
   db:
     image: postgres:15
     container_name: postgres_db_dev
@@ -26,6 +32,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data_dev:/var/lib/postgresql/data
-
+    networks:
+      - network 
 volumes:
   postgres_data_dev:

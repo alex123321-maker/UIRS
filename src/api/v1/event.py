@@ -12,7 +12,8 @@ from src.models import Event
 from src.schemas.event import EventCreate, EventBase, EventFullInfo, EventUpdate, EventListResponse, EventFilterRequest
 from src.schemas.user import UserFromDB
 from src.services.event import create_event_in_db, delete_event_by_id, update_event_by_id, get_event_by_id, get_events, \
-    add_participant_to_event, remove_participant_from_event, update_event_video
+    add_participant_to_event, remove_participant_from_event, update_event_video, clear_old_analize
+from src.utils.ml_connection import StartAnalize
 
 router = APIRouter()
 
@@ -46,6 +47,9 @@ async def create_new_event(
     # Проверка участников вынесена в обработчик
     await check_participants(event, db)
     created_event = await create_event_in_db(event, db, video)
+    if created_event.video:
+        StartAnalize(created_event.id,created_event.video)
+
     return created_event
 
 @router.post("/{event_id}/participant/{employee_id}", status_code=HTTP_201_CREATED)
@@ -112,12 +116,13 @@ async def update_event_video_endpoint(
     Если файл не передан — удаляет видео.
     """
     if video:
-        # Обработка добавления или изменения видео
-        print(f"Добавление или изменение видео: {video.filename}")
         await update_event_video(event, video, db)
-        return await get_event_by_id(event.id, db)
 
-    # Обработка удаления видео
-    print("Удаление видео")
+        res = await get_event_by_id(event.id, db)
+        await clear_old_analize(res.id,db)
+
+        return res
+
+    
     await update_event_video(event, None, db)
     return await get_event_by_id(event.id, db)

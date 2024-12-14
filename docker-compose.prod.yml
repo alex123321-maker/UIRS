@@ -1,5 +1,9 @@
 version: '3.8'
 
+networks:
+  network:
+    driver: bridge
+
 services:
   fastapi:
     image: x1sty/mdp-back:latest
@@ -12,6 +16,8 @@ services:
     environment:
       - APP_ENV=prod
       - DB_URL=postgresql+asyncpg://mdp-user:VuILDIB3@db:5432/mdp
+    networks:
+      - network
 
   db:
     image: postgres:15
@@ -24,6 +30,8 @@ services:
       - "1337:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - network
 
 volumes:
   postgres_data:

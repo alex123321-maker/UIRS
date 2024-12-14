@@ -14,6 +14,7 @@ class ProdAppSettings(AppSettings):
     # back-end app settings
     secret_key: SecretStr = SecretStr("secret-prod")
     ml_secret_key: SecretStr = SecretStr("ml-secret-prod")
+    ml_connection_url:str = "http://ml-module-container:8000/"
 
     db_url: PostgresDsn | None = None
     logging_level: int = logging.INFO

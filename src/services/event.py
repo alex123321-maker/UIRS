@@ -16,7 +16,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, UploadFile
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, NoResultFound
 
 from src.models import Event, PlannedParticipant, Employee, VisitInterval
 from src.schemas.employee import EmployeeInfoPhoto, DepartmentInfo, PositionInfo, PhotoInfo
@@ -399,3 +399,27 @@ async def update_event_video(event: Event, video: UploadFile | None, db: AsyncSe
             status_code=500,
             detail=f"Ошибка при обновлении видео: {str(e)}"
         )
+
+async def clear_old_analize(event_id, db):
+    try:
+        # Получаем все visit_intervals для указанного события
+        query = select(VisitInterval).where(VisitInterval.event_id == event_id).options(
+            joinedload(VisitInterval.employees))
+        result = await db.execute(query)
+        intervals = result.unique().scalars().all()
+
+        if not intervals:
+            return {"status": "success", "message": f"No visit_intervals found for event ID {event_id}."}
+
+        # Удаляем интервалы
+        for interval in intervals:
+            await db.delete(interval)
+
+        # Коммит изменений
+        await db.commit()
+
+        return {"status": "success", "message": f"All visit_intervals for event ID {event_id} have been deleted."}
+    except Exception as e:
+        # В случае ошибки откатываем транзакцию
+        await db.rollback()
+        return {"status": "error", "message": str(e)}

@@ -67,5 +67,3 @@ async def unregistered_visit(
     await add_unregistered_visit(visit_info, file, db)
 
     return MlResponse(message=SUCCESS_RESPONSE_ML)
-
-
