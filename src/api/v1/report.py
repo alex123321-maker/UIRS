@@ -7,13 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.dependencies.auth import get_current_user
 from src.api.dependencies.database import get_session
 from src.core.constant import FAIL_VALIDATION_MATCHED_EVENT
+from src.schemas.report import ReportResponse
 from src.schemas.user import UserFromDB
 from src.services.report import fetch_event_statistics
 
 router = APIRouter()
 
 
-@router.get('/event/{event_id}')
+@router.get('/event/{event_id}',response_model=ReportResponse)
 async def get_event_report(
     event_id: int,
     auth_user: Annotated[UserFromDB, Depends(get_current_user)],
