@@ -116,10 +116,15 @@ async def update_event_video_endpoint(
     Если файл не передан — удаляет видео.
     """
     if video:
+        # Обработка добавления или изменения видео
         await update_event_video(event, video, db)
+
+
+
 
         res = await get_event_by_id(event.id, db)
         await clear_old_analize(res.id,db)
+        await StartAnalize(res.id,res.video)
 
         return res
 
