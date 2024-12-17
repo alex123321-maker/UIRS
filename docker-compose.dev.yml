@@ -20,7 +20,11 @@ services:
       - /src/media:/app/media
       - .:/app
     networks:
-      - network 
+      - network
+  ml-module-container:
+    image: x1sty/mdp-ml:latest
+    networks:
+      - network
   db:
     image: postgres:15
     container_name: postgres_db_dev

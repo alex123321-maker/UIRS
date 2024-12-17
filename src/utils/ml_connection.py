@@ -13,15 +13,13 @@ async def StartAnalize(event_id: int, video_path: str):
                 files = {'file': (video_path.split("/")[-1], file, "video/mp4")}
                 
                 # Отправляем POST-запрос
-                response = await client.post(url, data=data, files=files)
-                
+                response = await client.post(url, data=data, files=files,timeout=60.0)
                 # Проверяем успешность запроса
-                response.raise_for_status()
-                
+
                 # Возвращаем JSON-ответ
                 return response.json()
     except httpx.RequestError as e:
-        print(f"Ошибка при отправке запроса: {e}")
+        print(f"Ошибка при отправке запроса: {str(e)}")
         return {"error": str(e)}
     except FileNotFoundError:
         print(f"Файл не найден: {video_path}")

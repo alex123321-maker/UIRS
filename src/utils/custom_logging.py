@@ -47,15 +47,13 @@ class CustomizeLogger:
 
     @classmethod
     def customize_logging(
-        cls,
-        filepath: Path,
-        level: str,
-        rotation: str,
-        retention: str,
-        format: str,
+            cls,
+            filepath: Path,
+            level: str,
+            rotation: str,
+            retention: str,
+            format: str,
     ):
-
-
         logger.remove()
         logger.add(
             sys.stdout,
@@ -73,6 +71,10 @@ class CustomizeLogger:
             level=level.upper(),
             format=format,
         )
+        # Отключаем логи SQLAlchemy
+        logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+        logging.getLogger("sqlalchemy").propagate = False
+
         logging.basicConfig(
             handlers=[InterceptHandler()],
             level=0,
