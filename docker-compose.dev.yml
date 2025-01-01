@@ -15,14 +15,10 @@ services:
       - db
     environment:
       APP_ENV: dev
-      DB_URL: postgresql+asyncpg://postgres:postgres@db:5432/mdp
+      DB_URL: postgresql+asyncpg://postgres:postgres@db:5432/uirs
     volumes:
       - /src/media:/app/media
       - .:/app
-    networks:
-      - network
-  ml-module-container:
-    image: x1sty/mdp-ml:latest
     networks:
       - network
   db:

@@ -39,15 +39,9 @@ def create_token_for_user(user: UserFromDB, secret_key: str) -> UserTokenData:
 
 def get_user_from_token(token: str, secret_key: str) -> UserFromDB:
     try:
-        if token != settings.ml_secret_key.get_secret_value():
-            decoded_user = jwt.decode(token, secret_key, algorithms=ALGORITHM)
-            return UserFromDB(**decoded_user)
-        else:
-            return UserFromDB(
-                id=-1,
-                login="ML_MODULE",
-                role=RoleEnum.USER
-            )
+        decoded_user = jwt.decode(token, secret_key, algorithms=ALGORITHM)
+        return UserFromDB(**decoded_user)
+
 
     except JWTError as decode_error:
         raise ValueError("unable to decode") from decode_error

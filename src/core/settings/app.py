@@ -17,12 +17,11 @@ class AppSettings(BaseAppSettings):
     openapi_url: str = "/openapi.json"
     redoc_url: str = "/redoc"
     title: str = "FastAPI example application"
-    version: str = "0.6.4"
+    version: str = "1.0.0"
 
     # back-end app settings
     api_v1_prefix: str = "/api/v1"
     secret_key: SecretStr
-    ml_secret_key: SecretStr
     auth_header_key: str = "Authorization"
     allowed_hosts: list[str] = ["*"]
 
