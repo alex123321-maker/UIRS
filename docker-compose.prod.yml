@@ -6,7 +6,7 @@ networks:
 
 services:
   fastapi:
-    image: x1sty/mdp-back:latest
+    image: a1exdocker/uirs-back:latest
     ports:
       - "8000:8000"
     depends_on:
@@ -15,7 +15,7 @@ services:
       - /src/media:/app/media
     environment:
       - APP_ENV=prod
-      - DB_URL=postgresql+asyncpg://mdp-user:VuILDIB3@db:5432/mdp
+      - DB_URL=postgresql+asyncpg://uirs-user:VuILDIB3@db:5432/uirs
     networks:
       - network
 
@@ -23,15 +23,15 @@ services:
     image: postgres:15
     container_name: postgres_db
     environment:
-      POSTGRES_USER: mdp-user
+      POSTGRES_USER: uirs-user
       POSTGRES_PASSWORD: VuILDIB3
-      POSTGRES_DB: mdp
+      POSTGRES_DB: uirs
     ports:
       - "1337:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_db:/var/lib/postgresql/data
     networks:
       - network
 
 volumes:
-  postgres_data:
+  postgres_db:
