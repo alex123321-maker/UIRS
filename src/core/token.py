@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from src.core import  settings
 from src.schemas.auth import TokenBase
-from src.schemas.user import UserTokenData, UserFromDB, RoleEnum
+from src.schemas.user import UserTokenData, UserFromDB
 
 TOKEN_TYPE = "bearer"
 JWT_SUBJECT = "access"

@@ -1,24 +1,17 @@
 from typing import List
 
-from pydantic import BaseModel, ConfigDict, constr, Field
+from pydantic import BaseModel, ConfigDict,  Field
 from src.core import security
-from enum import Enum
 
 
 from src.core.constant import SUCCESS_DELETE_USER
 
 
-class RoleEnum(str, Enum):
-    HR = "HR"
-    USER = "USER"
-
 class UserBase(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
     )
-
     login: str
-    role: RoleEnum
 
 class UserInDB(UserBase):
     salt: str | None = None
@@ -42,7 +35,6 @@ class UserInSignIn(BaseModel):
 class UserInCreate(BaseModel):
     login: str
     password: str
-    role: RoleEnum
 
 class UserTokenData(BaseModel):
     access_token: str | None = None
@@ -54,7 +46,5 @@ class UserAuthOutData(UserBase):
 class UserDeleteResponse(BaseModel):
     message: str = Field(..., example=SUCCESS_DELETE_USER)
 
-class PaginatedResponse(BaseModel):
-    total: int
-    items: List[UserFromDB]
+
 

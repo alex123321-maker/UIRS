@@ -11,6 +11,8 @@ FAIL_VALIDATION_MATCHED_PHOTO_ID = "Фотография не найдена."
 SUCCESS_RESPONSE_ML = "Сообщение успешно получено."
 # FAIL
 FAIL_VALIDATION_MATCHED_USER_ID = "Нет пользователя с таким ID."
+
+
 FAIL_VALIDATION_MATCHED_EMPLOYEE = "Сотрудник не найден."
 
 

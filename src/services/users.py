@@ -1,6 +1,4 @@
-from enum import Enum
 from typing import List, Tuple
-from enum import Enum
 
 from sqlalchemy import select, func
 from sqlalchemy.exc import SQLAlchemyError
@@ -8,43 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.security import verify_password
 from src.models.user import User
-from src.schemas.user import UserInCreate, UserBase, UserFromDB, RoleEnum
-
-
-async def get_users(
-        db: AsyncSession,
-        role: RoleEnum | None,
-        login: str | None,
-        limit: int = 10,
-        offset: int = 0
-) -> Tuple[int, List[UserFromDB]]:
-    """Получить пользователей с фильтрацией, сортировкой и пагинацией"""
-    query = select(User)
-
-    # Фильтрация
-    if role:
-        query = query.where(User.role == role)
-    if login:
-        query = query.where(User.login.ilike(f"%{login}%"))
-
-    # Получение общего количества записей
-    count_query = select(func.count()).select_from(query.subquery())
-    total = (await db.execute(count_query)).scalar()
-
-    # Применение пагинации
-    query = query.limit(limit).offset(offset)
-
-    result = await db.execute(query)
-    users = result.scalars().all()
-
-    return total, [UserFromDB.model_validate(user) for user in users]
+from src.schemas.user import UserInCreate, UserBase, UserFromDB
 
 
 async def create_user(db: AsyncSession, user_in: UserInCreate) -> UserFromDB:
     """Создать нового пользователя с указанной ролью"""
     user = User(
         login=user_in.login,
-        role=user_in.role,
     )
     user.change_password(user_in.password)
     db.add(user)
