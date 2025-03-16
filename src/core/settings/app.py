@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 from pydantic import ConfigDict, SecretStr
@@ -10,14 +11,16 @@ class AppSettings(BaseAppSettings):
         validate_assignment=True,
     )
 
-    # fastapi_kwargs
+
+    BASE_DIR: str = str(Path(__file__).resolve().parent.parent.parent.parent)
+
     debug: bool = False
-    docs_url: str = "/docs"
+    docs_url: str | None =None
     openapi_prefix: str = ""
     openapi_url: str = "/openapi.json"
     redoc_url: str = "/redoc"
     title: str = "FastAPI example application"
-    version: str = "1.0.0"
+    version: str = "1.1.0"
 
     # back-end app settings
     api_v1_prefix: str = "/api/v1"

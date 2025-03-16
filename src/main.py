@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import (
     get_redoc_html,
@@ -32,16 +33,24 @@ def create_app() -> FastAPI:
     )
 
     _app.mount("/media", StaticFiles(directory="media"), name="media")
+    _app.mount("/static", StaticFiles(directory="static"), name="static")
+
     _app.logger = CustomizeLogger.make_logger(config_path)
     _app.include_router(api_router, prefix=settings.api_v1_prefix)
 
     @_app.get("/docs", include_in_schema=False)
     async def custom_swagger_ui_html():
-        return get_swagger_ui_html(
+        original_html =  get_swagger_ui_html(
             openapi_url=_app.openapi_url,
-            title=_app.title + " - Swagger UI custom",
+            title=_app.title + " - Swagger UI custom",#/recipe/create_recipe_api_v1_recipe__post
             oauth2_redirect_url=_app.swagger_ui_oauth2_redirect_url,
         )
+        original_html_str = original_html.body.decode("utf-8")
+        custom_css_link = '<link rel="stylesheet" type="text/css" href="/static/swagger_custom.css"/>'
+
+        new_html = original_html_str.replace("<head>", f"<head>{custom_css_link}\n")
+
+        return HTMLResponse(new_html)
 
     @_app.get(_app.swagger_ui_oauth2_redirect_url, include_in_schema=False)
     async def swagger_ui_redirect():
