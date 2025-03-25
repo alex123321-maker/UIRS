@@ -1,6 +1,5 @@
-from typing import List, Tuple
-
-from sqlalchemy import select, func
+from fastapi import HTTPException,status
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,8 +34,20 @@ async def update_user_service(db: AsyncSession, user_id: int, user_update: UserB
     user = await db.get(User, user_id)
     if user is None:
         return None
+    data_to_update = user_update.model_dump(exclude_unset=True)
+    new_login = data_to_update.get("login")
+    if new_login:
+        stmt = select(User).where(User.login == new_login)
+        existing_user = (await db.execute(stmt)).scalar_one_or_none()
+        if existing_user and existing_user.id != user_id:
+            # Если в БД есть другой пользователь с таким логином, выбрасываем ошибку
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Этот логин уже используется другим пользователем."
+            )
 
-    for key, value in user_update.model_dump(exclude_unset=True).items():
+    # Если логин свободен или мы его не меняем – обновляем остальные поля
+    for key, value in data_to_update.items():
         setattr(user, key, value)
 
     await db.commit()
