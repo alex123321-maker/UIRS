@@ -34,3 +34,15 @@ async def get_ingredients(
     ingredients = list(results.scalars().all())
 
     return ingredients, total
+
+
+async def get_ingredient_by_id(
+    db: AsyncSession,
+    ingredient_id: int
+) -> Optional[Ingredient]:
+    """
+    Ищет ингредиент в БД по его ID.
+    Возвращает объект Ingredient, если найден, иначе None.
+    """
+    result = await db.execute(select(Ingredient).where(Ingredient.id == ingredient_id))
+    return result.scalars().first()
