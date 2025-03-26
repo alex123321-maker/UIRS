@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from alembic import context
 from sqlalchemy import pool,engine_from_config
 from src.core.config import get_app_settings
-from src.models import RWModel
+from src.models.rwmodel import RWModel
 
 
 config = context.config

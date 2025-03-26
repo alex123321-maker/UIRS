@@ -1,10 +1,7 @@
-from enum import nonmember
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.user import User
-from src.schemas.user import UserBase, UserInSignIn, UserInDB, UserFromDB
-from src.core import security
+from src.schemas.user import UserInSignIn, UserFromDB
 
 
 async def _get_user_by_login(db: AsyncSession, login: str) -> User | None:

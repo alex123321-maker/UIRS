@@ -43,7 +43,7 @@ class RecipeCreate(BaseModel):
     tags: List[int] = []
 
 
-# ---- Выходные (ответ) схемы ----
+
 
 class UnitOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

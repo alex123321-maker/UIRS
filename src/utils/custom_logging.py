@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+from logging import LogRecord
 from pathlib import Path
 
 from loguru import logger
@@ -16,7 +17,7 @@ class InterceptHandler(logging.Handler):
         0: "NOTSET",
     }
 
-    def emit(self, record):
+    def emit(self, record:LogRecord)->None:
         try:
             level = logger.level(record.levelname).name
         except AttributeError:
@@ -33,7 +34,7 @@ class InterceptHandler(logging.Handler):
 
 class CustomizeLogger:
     @classmethod
-    def make_logger(cls, config_path: Path):
+    def make_logger(cls, config_path: Path)->logger:
         config = cls.load_logging_config(config_path)
         logging_config = config.get("logger")
         logger = cls.customize_logging(
@@ -53,7 +54,7 @@ class CustomizeLogger:
             rotation: str,
             retention: str,
             format: str,
-    ):
+    )->logger:
         logger.remove()
         logger.add(
             sys.stdout,
@@ -87,7 +88,7 @@ class CustomizeLogger:
         return logger.bind(request_id="app", method=None)
 
     @classmethod
-    def load_logging_config(cls, config_path):
+    def load_logging_config(cls, config_path:str)->dict:
         config = None
         with open(config_path) as config_file:
             config = json.load(config_file)

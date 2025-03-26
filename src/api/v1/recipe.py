@@ -21,7 +21,7 @@ async def create_recipe(
 
     db: AsyncSession = Depends(get_session),
     current_user: UserFromDB = Depends(get_current_user),
-):
+)-> RecipeFullOut:
     """
     Создать новый рецепт вместе с этапами, ингредиентами, тегами и фото.
     Принимаем recipe_data (JSON) и файлы:

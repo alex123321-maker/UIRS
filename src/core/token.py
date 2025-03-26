@@ -3,7 +3,6 @@ from datetime import UTC, datetime, timedelta
 from jose import JWTError, jwt
 from pydantic import ValidationError
 
-from src.core import  settings
 from src.schemas.auth import TokenBase
 from src.schemas.user import UserTokenData, UserFromDB
 
@@ -18,7 +17,7 @@ def create_token(
     content: dict[str, str],
     secret_key: str,
     expires_delta: timedelta | None = timedelta(minutes=15),
-):
+)->str:
     to_encode = content.copy()
     expire = datetime.now(UTC) + expires_delta
     to_encode.update(TokenBase(exp=expire, sub=JWT_SUBJECT).model_dump())

@@ -1,0 +1,6 @@
+- name: Молоко
+  icon_url: null
+- name: Яйца
+  icon_url: static/ingredients/Яйца.png
+- name: Помидоры
+  icon_url: null

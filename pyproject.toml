@@ -21,6 +21,19 @@ python-multipart = "^0.0.17"
 requests = "^2.32.3"
 httpx = "^0.28.1"
 aiofiles = "^24.1.0"
+pyyaml = "^6.0.2"
+
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.11.2"
+
+[tool.ruff]
+line-length = 88
+exclude = ["migrations", "docs"]
+
+[tool.ruff.lint]
+extend-select = ["C", "Q", "ANN"]
+ignore = ["E501"]
 
 
 [build-system]

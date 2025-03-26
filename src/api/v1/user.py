@@ -1,4 +1,4 @@
-from typing import Annotated, List
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Form
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ router = APIRouter()
 async def register_user(
     user_in:Annotated[UserInCreate,Body()],
     db: AsyncSession = Depends(get_session)
-):
+)->UserFromDB:
     existing_user = await _get_user_by_login(db, user_in.login)
     if existing_user:
         raise HTTPException(
@@ -33,7 +33,7 @@ async def register_user(
 async def delete_user(
         user_in: Annotated[UserFromDB, Depends(get_current_user)],
         db: AsyncSession = Depends(get_session)
-):
+)->UserDeleteResponse:
     existing_user: bool | None = await delete_user_service(db, user_in.id)
     if existing_user:
         return UserDeleteResponse(message=SUCCESS_DELETE_USER)
@@ -47,7 +47,7 @@ async def update_user(
 
         db: AsyncSession = Depends(get_session)
 
-):
+)->UserBase:
 
     existing_user: UserBase = await update_user_service(db,user_in.id,user_update)
 
@@ -59,7 +59,7 @@ async def update_user(
 async def get_me(
     user_in:Annotated[UserFromDB,Depends(get_current_user)],
     db: AsyncSession = Depends(get_session)
-):
+)->UserFromDB:
     return user_in
 
 
@@ -69,7 +69,7 @@ async def change_password(
     new_password: str,
     db: AsyncSession = Depends(get_session),
     current_user: UserFromDB = Depends(get_current_user),
-):
+)->dict:
     """
     Эндпоинт для смены пароля пользователя.
 

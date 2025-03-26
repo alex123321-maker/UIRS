@@ -1,7 +1,4 @@
-from enum import Enum
-
 from sqlalchemy.orm import relationship
-
 from src.core import security
 from src.models.rwmodel import RWModel as Base
 from sqlalchemy import Column, Integer, String
@@ -9,7 +6,7 @@ from sqlalchemy import Column, Integer, String
 
 
 class User(Base):
-    __tablename__ = 'users'
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     login = Column(String, unique=True, index=True)

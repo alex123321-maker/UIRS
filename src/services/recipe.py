@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from datetime import datetime
 
@@ -9,10 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.recipe import (
     Recipe, RecipeStage, RecipeIngredient,
-    RecipeTag, Ingredient, Tag, UnitOfMeasurement
+    RecipeTag, Ingredient, Tag,
 )
-from src.schemas.recipe import RecipeCreate, RecipeFullOut, DifficultyEnum
+from src.schemas.recipe import RecipeCreate, RecipeFullOut, RecipeIngredientCreate, RecipeStageCreate
 from src.core import settings
+
 
 async def create_recipe_service(
     db: AsyncSession,
@@ -25,41 +25,13 @@ async def create_recipe_service(
     Создаёт рецепт вместе с этапами, ингредиентами и тегами,
     загружает фотографии, валидирует ингредиенты и теги.
     Возвращает рецепт во вложенном виде.
-    :param recipe_in: данные для рецепта
-    :param user_id: автор
-    :param preview_image: файл превью (может быть None)
-    :param stage_images: словарь {order_index: файл}, может быть пустым
     """
 
-    # 1. Валидация ингредиентов
-    ingredient_ids = [x.ingredient_id for x in recipe_in.ingredients]
-    if ingredient_ids:
-        res_ingr = await db.execute(
-            select(Ingredient.id).where(Ingredient.id.in_(ingredient_ids))
-        )
-        found_ingr_ids = {row[0] for row in res_ingr}
-        missing = set(ingredient_ids) - found_ingr_ids
-        if missing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Некоторые ingredient_id не найдены: {missing}"
-            )
+    # 1. Валидация ингредиентов и тегов
+    await validate_ingredients(db, recipe_in.ingredients)
+    await validate_tags(db, recipe_in.tags)
 
-    # 2. Валидация тегов
-    tag_ids = recipe_in.tags
-    if tag_ids:
-        res_tags = await db.execute(
-            select(Tag.id).where(Tag.id.in_(tag_ids))
-        )
-        found_tag_ids = {row[0] for row in res_tags}
-        missing_tags = set(tag_ids) - found_tag_ids
-        if missing_tags:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Некоторые tag_id не найдены: {missing_tags}"
-            )
-
-    # Создадим транзакцию
+    # 2. Создадим транзакцию
     async with db.begin():
         # 3. Создаём запись о рецепте
         new_recipe = Recipe(
@@ -83,54 +55,23 @@ async def create_recipe_service(
 
         # 5. Сохраняем превью, если передано
         if preview_image is not None:
-            preview_path = media_dir / "preview.jpg"
-            with preview_path.open("wb") as f:
-                f.write(await preview_image.read())
-            new_recipe.photo_url = f"/media/{new_recipe.id}/preview.jpg"
+            await save_preview_image(preview_image, media_dir, new_recipe)
 
-        # 6. Создаём этапы, сохраняем фото при наличии
-        for stage_in in recipe_in.stages:
-            stage = RecipeStage(
-                recipe_id=new_recipe.id,
-                title=stage_in.title,
-                order_index=stage_in.order_index,
-                description=stage_in.description,
-                minutes=stage_in.minutes,
-            )
-            db.add(stage)
-            await db.flush()  # чтобы получить stage.id
-
-            # Проверяем, есть ли фото под данный order_index
-            if stage_in.order_index in stage_images:
-                stage_file = stage_images[stage_in.order_index]
-                stage_path = media_dir / f"{stage_in.order_index}.jpg"
-                with stage_path.open("wb") as f:
-                    f.write(await stage_file.read())
-                stage.photo_url = f"/media/{new_recipe.id}/{stage_in.order_index}.jpg"
+        # 6. Создаём этапы и сохраняем фото
+        if stage_images is None:
+            stage_images = {}
+        await create_and_save_stages(db, new_recipe.id, recipe_in.stages, stage_images, media_dir)
 
         # 7. Создаём ингредиенты
-        for ingr_in in recipe_in.ingredients:
-            rec_ingr = RecipeIngredient(
-                recipe_id=new_recipe.id,
-                ingredient_id=ingr_in.ingredient_id,
-                unit_id=ingr_in.unit_id,
-                quantity=ingr_in.quantity
-            )
-            db.add(rec_ingr)
+        await save_recipe_ingredients(db, new_recipe.id, recipe_in.ingredients)
 
         # 8. Создаём связи с тегами
-        for tag_id in recipe_in.tags:
-            recipe_tag = RecipeTag(
-                recipe_id=new_recipe.id,
-                tag_id=tag_id
-            )
-            db.add(recipe_tag)
+        await save_recipe_tags(db, new_recipe.id, recipe_in.tags)
 
-    # Фиксируем транзакцию и загружаем «полный» рецепт с зависимостями
-    # (stages, ingredients->ingredient, unit, tags->tag)
+    # 9. Фиксируем транзакцию
     await db.refresh(new_recipe)
 
-    # Выполним отдельный запрос, чтобы подгрузить вложенные объекты
+    # 10. Выполним отдельный запрос, чтобы подгрузить вложенные объекты
     await db.execute(
         select(Recipe)
         .options(
@@ -141,8 +82,104 @@ async def create_recipe_service(
         )
         .where(Recipe.id == new_recipe.id)
     )
-    # Чтобы объекты stages, ingredients, tags подтянулись в new_recipe,
-    # в asyncsession.orm_state достаточно сделать refresh с нужными нагрузками
-    # или заново извлечь через one(), затем вернуть.
 
     return RecipeFullOut.model_validate(new_recipe)
+
+
+
+async def create_and_save_stages(
+    db: AsyncSession,
+    recipe_id: int,
+    stages_in: list[RecipeStageCreate],
+    stage_images: dict[int, UploadFile],
+    media_dir: Path
+) -> None:
+    for stage_in in stages_in:
+        stage = RecipeStage(
+            recipe_id=recipe_id,
+            title=stage_in.title,
+            order_index=stage_in.order_index,
+            description=stage_in.description,
+            minutes=stage_in.minutes,
+        )
+        db.add(stage)
+        await db.flush()  # Чтобы получить stage.id
+
+        # Проверяем, есть ли фото для этого шага
+        if stage_in.order_index in stage_images:
+            stage_file = stage_images[stage_in.order_index]
+            stage_path = media_dir / f"{stage_in.order_index}.jpg"
+            with stage_path.open("wb") as f:
+                f.write(await stage_file.read())
+            stage.photo_url = f"/media/{recipe_id}/{stage_in.order_index}.jpg"
+
+async def save_recipe_ingredients(
+    db: AsyncSession,
+    recipe_id: int,
+    ingredients_in: list[RecipeIngredientCreate]
+) -> None:
+    for ingr_in in ingredients_in:
+        rec_ingr = RecipeIngredient(
+            recipe_id=recipe_id,
+            ingredient_id=ingr_in.ingredient_id,
+            unit_id=ingr_in.unit_id,
+            quantity=ingr_in.quantity
+        )
+        db.add(rec_ingr)
+
+
+async def save_recipe_tags(
+    db: AsyncSession,
+    recipe_id: int,
+    tag_ids: list[int]
+) -> None:
+    for tag_id in tag_ids:
+        recipe_tag = RecipeTag(
+            recipe_id=recipe_id,
+            tag_id=tag_id
+        )
+        db.add(recipe_tag)
+
+
+async def save_preview_image(
+    preview_image: UploadFile,
+    media_dir: Path,
+    recipe: Recipe
+) -> None:
+    preview_path = media_dir / "preview.jpg"
+    with preview_path.open("wb") as f:
+        f.write(await preview_image.read())
+    recipe.photo_url = f"/media/{recipe.id}/preview.jpg"
+
+
+async def validate_ingredients(db: AsyncSession, ingredients: list[RecipeIngredientCreate]) -> None:
+    if not ingredients:
+        return
+
+    ingredient_ids = [x.ingredient_id for x in ingredients]
+    res_ingr = await db.execute(
+        select(Ingredient.id).where(Ingredient.id.in_(ingredient_ids))
+    )
+    found_ingr_ids = {row[0] for row in res_ingr}
+    missing = set(ingredient_ids) - found_ingr_ids
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Некоторые ingredient_id не найдены: {missing}"
+        )
+
+
+async def validate_tags(db: AsyncSession, tag_ids: list[int]) -> None:
+    if not tag_ids:
+        return
+
+    res_tags = await db.execute(
+        select(Tag.id).where(Tag.id.in_(tag_ids))
+    )
+    found_tag_ids = {row[0] for row in res_tags}
+    missing_tags = set(tag_ids) - found_tag_ids
+    if missing_tags:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Некоторые tag_id не найдены: {missing_tags}"
+        )
