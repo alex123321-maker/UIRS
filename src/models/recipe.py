@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, String, Integer, Boolean, DateTime, Float,
-    Enum as SAEnum, ForeignKey, Text
+    Enum as SAEnum, ForeignKey, Text, Table
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -12,6 +12,13 @@ class DifficultyEnum(str, Enum):
     EASY = "EASY"
     MEDIUM = "MEDIUM"
     HARD = "HARD"
+
+recipe_tags = Table(
+    "recipe_tags",
+    Base.metadata,  # связываем с метаданными
+    Column("recipe_id", Integer, ForeignKey("recipes.id"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id"), primary_key=True)
+)
 
 class Recipe(Base):
     __tablename__ = "recipes"
@@ -34,7 +41,7 @@ class Recipe(Base):
     # Связь с объектом-ассоциацией RecipeIngredient
     ingredients = relationship("RecipeIngredient", back_populates="recipe")
     # Связь с объектом-ассоциацией RecipeTag
-    tags = relationship("RecipeTag", back_populates="recipe")
+    tags = relationship("Tag", secondary=recipe_tags, back_populates="recipes")
 
 class RecipeStage(Base):
     __tablename__ = "recipe_stages"
@@ -84,16 +91,6 @@ class Tag(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False)
+    recipes = relationship("Recipe", secondary=recipe_tags, back_populates="tags")
 
-    # Обратная связь на список объектов RecipeTag,
-    # из которых можно получить доступ к связанным Recipe
-    recipe_tags = relationship("RecipeTag", back_populates="tag")
 
-class RecipeTag(Base):
-    __tablename__ = "recipe_tags"
-
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), primary_key=True)
-    tag_id = Column(Integer, ForeignKey("tags.id"), primary_key=True)
-
-    recipe = relationship("Recipe", back_populates="tags")
-    tag = relationship("Tag", back_populates="recipe_tags")

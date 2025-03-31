@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.recipe import (
     Recipe, RecipeStage, RecipeIngredient,
-    RecipeTag, Ingredient, Tag, UnitOfMeasurement,
+     Ingredient, Tag, UnitOfMeasurement,
 )
 from src.schemas.recipe import RecipeCreate, RecipeFullOut, RecipeIngredientCreate, RecipeStageCreate
 from src.core import settings
@@ -94,19 +94,20 @@ async def create_recipe_service(
     await save_recipe_ingredients(db, new_recipe.id, recipe_in.ingredients)
 
     # 6. Создаём связи с тегами
-    await save_recipe_tags(db, new_recipe.id, recipe_in.tags)
+    await save_recipe_tags(db, new_recipe, recipe_in.tags)
+
 
     # 7. Обновляем объект рецепта, чтобы подгрузить все изменения
     await db.refresh(new_recipe)
 
-    # 8. Возвращаем готовую схему
     stmt = (
         select(Recipe)
         .options(
             selectinload(Recipe.stages),
             selectinload(Recipe.ingredients).selectinload(RecipeIngredient.ingredient),
             selectinload(Recipe.ingredients).selectinload(RecipeIngredient.unit),
-            selectinload(Recipe.tags).selectinload(RecipeTag.tag),
+            # Теперь tags у нас уже список Tag, поэтому достаточно
+            selectinload(Recipe.tags),
         )
         .where(Recipe.id == new_recipe.id)
     )
@@ -158,16 +159,17 @@ async def save_recipe_ingredients(
 
 async def save_recipe_tags(
     db: AsyncSession,
-    recipe_id: int,
+    recipe: Recipe,
     tag_ids: list[int]
 ) -> None:
-    for tag_id in tag_ids:
-        recipe_tag = RecipeTag(
-            recipe_id=recipe_id,
-            tag_id=tag_id
-        )
-        db.add(recipe_tag)
-
+    if not tag_ids:
+        return
+    result = await db.execute(
+        select(Tag).where(Tag.id.in_(tag_ids))
+    )
+    tags = result.scalars().all()
+    # Выполняем присваивание в синхронном контексте
+    await db.run_sync(lambda sync_session: setattr(recipe, 'tags', tags))
 
 async def save_preview_image(
     preview_image: UploadFile,
