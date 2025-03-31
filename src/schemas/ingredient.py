@@ -17,3 +17,13 @@ class PaginatedIngredientList(IngredientList):
     results: int
     current_page: int
     total_pages: int
+
+class UnitBase(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+class UnitsList(BaseModel):
+    units: List[UnitBase]

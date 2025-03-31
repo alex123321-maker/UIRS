@@ -2,7 +2,8 @@ from typing import List, Optional, Tuple
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.recipe import Ingredient
+from src.models.recipe import Ingredient, UnitOfMeasurement
+
 
 async def get_ingredients(
     db: AsyncSession,
@@ -35,6 +36,14 @@ async def get_ingredients(
 
     return ingredients, total
 
+
+async def get_units(db: AsyncSession) -> List[UnitOfMeasurement]:
+    """
+    Возвращает все единицы измерения (без пагинации).
+    """
+    query = select(UnitOfMeasurement)
+    results = await db.execute(query)
+    return list(results.scalars().all())
 
 async def get_ingredient_by_id(
     db: AsyncSession,

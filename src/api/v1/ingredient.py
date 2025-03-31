@@ -1,11 +1,11 @@
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, status, Query, Path, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.schemas.ingredient import PaginatedIngredientList, IngredientBase
+from src.schemas.ingredient import PaginatedIngredientList, IngredientBase, UnitBase
 from src.api.dependencies.database import get_session
 from src.api.dependencies.pagination import PaginationParams, get_pagination_params
-from src.services.ingredient import get_ingredients, get_ingredient_by_id
+from src.services.ingredient import get_ingredients, get_ingredient_by_id, get_units
 
 router = APIRouter()
 
@@ -44,6 +44,23 @@ async def ingredient_list(
     )
 
 @router.get(
+    "/units",
+    response_model=List[UnitBase],
+    status_code=status.HTTP_200_OK,
+    summary="Получить все единицы измерения",
+    description="Возвращает список всех доступных единиц измерения."
+)
+async def get_units_list(
+    db: AsyncSession = Depends(get_session)
+) -> List[UnitBase]:
+    """
+    Доступен без авторизации.
+    Возвращает список всех единиц измерения из БД.
+    """
+    units = await get_units(db)
+    return [UnitBase.model_validate(u) for u in units]
+
+@router.get(
     "/{ingredient_id}",
     response_model=IngredientBase,
     status_code=status.HTTP_200_OK,
@@ -67,3 +84,6 @@ async def get_ingredient(
     # Благодаря `from_attributes = True` в pydantic-модели можно вернуть прямо объект
     # Однако, чтобы быть явными, используем конструктор Pydantic:
     return IngredientBase.model_validate(ingredient)
+
+
+
