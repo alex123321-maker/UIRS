@@ -213,3 +213,105 @@ async def validate_tags(db: AsyncSession, tag_ids: list[int]) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Некоторые tag_id не найдены: {missing_tags}"
         )
+
+
+async def get_recipe_by_id(db: AsyncSession, id: int) -> RecipeFullOut:
+    recipe = await db.execute(
+        select(Recipe)
+        .where(Recipe.id == id)
+        .options(
+            selectinload(Recipe.stages),
+            selectinload(Recipe.ingredients).selectinload(RecipeIngredient.ingredient),
+            selectinload(Recipe.ingredients).selectinload(RecipeIngredient.unit),
+            selectinload(Recipe.tags),  # <--- ВАЖНО: Загрузка tags
+        )
+    )
+    return RecipeFullOut.model_validate(recipe.scalars().one())
+
+from sqlalchemy import select, func, asc, desc
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from src.models.recipe import Recipe, DifficultyEnum, RecipeIngredient, Tag
+from typing import Optional, List, Tuple
+
+async def get_recipes_list_service(
+    db: AsyncSession,
+    page: int,
+    limit: int,
+    title: Optional[str] = None,
+    author_id: Optional[int] = None,
+    difficulty: Optional[DifficultyEnum] = None,
+    tag_ids: Optional[List[int]] = None,
+    ingredient_ids: Optional[List[int]] = None,
+    sort_by: Optional[str] = None,  # 'date' или 'calories'
+    sort_order: Optional[str] = None  # 'asc' или 'desc'
+) -> Tuple[List[Recipe], int]:
+
+    stmt = select(Recipe).where(Recipe.is_published == True).options(
+        selectinload(Recipe.tags),
+        selectinload(Recipe.ingredients).selectinload(RecipeIngredient.ingredient),
+        selectinload(Recipe.ingredients).selectinload(RecipeIngredient.unit),
+        selectinload(Recipe.stages)
+    )
+
+    if title:
+        stmt = stmt.where(Recipe.title.ilike(f"%{title}%"))
+    if author_id:
+        stmt = stmt.where(Recipe.author_id == author_id)
+    if difficulty:
+        stmt = stmt.where(Recipe.difficulty == difficulty)
+
+    if tag_ids:
+        for tag_id in tag_ids:
+            stmt = stmt.where(Recipe.tags.any(Tag.id == tag_id))
+
+    if ingredient_ids:
+        for ing_id in ingredient_ids:
+            stmt = stmt.where(Recipe.ingredients.any(RecipeIngredient.ingredient_id == ing_id))
+
+    if sort_by == "date":
+        stmt = stmt.order_by(desc(Recipe.published_at) if sort_order == "desc" else asc(Recipe.published_at))
+    elif sort_by == "calories":
+        stmt = stmt.order_by(desc(Recipe.calories) if sort_order == "desc" else asc(Recipe.calories))
+
+    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
+    stmt = stmt.offset((page - 1) * limit).limit(limit)
+
+    result = await db.execute(stmt)
+    recipes = result.scalars().all()
+
+    return recipes, total
+
+async def get_my_recipes_service(
+    db: AsyncSession,
+    user_id: int,
+    page: int,
+    limit: int,
+    is_published: Optional[bool] = None,
+    sort_order: Optional[str] = None,
+) -> Tuple[List[Recipe], int]:
+    """
+    Возвращает рецепты пользователя с фильтрацией по публикации и сортировкой по дате публикации.
+    """
+    stmt = select(Recipe).options(
+        selectinload(Recipe.tags),
+        selectinload(Recipe.ingredients).selectinload(RecipeIngredient.ingredient),
+        selectinload(Recipe.ingredients).selectinload(RecipeIngredient.unit),
+        selectinload(Recipe.stages)
+    ).where(Recipe.author_id == user_id)
+
+    if is_published is not None:
+        stmt = stmt.where(Recipe.is_published == is_published)
+
+    # Сортировка по дате публикации
+    stmt = stmt.order_by(
+        desc(Recipe.published_at) if sort_order == "desc" else asc(Recipe.published_at)
+    )
+
+    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
+    stmt = stmt.offset((page - 1) * limit).limit(limit)
+
+    result = await db.execute(stmt)
+    recipes = result.scalars().all()
+
+    return recipes, total
