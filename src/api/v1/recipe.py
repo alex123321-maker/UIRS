@@ -26,13 +26,14 @@ async def create_recipe(
     Создать новый рецепт вместе с этапами, ингредиентами, тегами и фото.
 
     ### Формат поля `recipe_data` (JSON):
+    Возможные значения difficulty: EASY, MEDIUM, HARD
     ```json
     {
         "title": "Жареная картошка",
         "description": "Классический рецепт жареной картошки с луком",
         "calories": 320.5,
         "is_published": true,
-        "difficulty": "EASY",  // Возможные значения: EASY, MEDIUM, HARD
+        "difficulty": "EASY",
         "stages": [
             {
                 "title": "Нарезка картошки",

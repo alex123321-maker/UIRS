@@ -1,14 +1,15 @@
 from pathlib import Path
 from datetime import datetime
+from typing import Optional, List, Tuple
 
 from fastapi import HTTPException, status, UploadFile
-from sqlalchemy import select
+from sqlalchemy import select, desc, func, asc
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.recipe import (
     Recipe, RecipeStage, RecipeIngredient,
-     Ingredient, Tag, UnitOfMeasurement,
+    Ingredient, Tag, UnitOfMeasurement, DifficultyEnum,
 )
 from src.schemas.recipe import RecipeCreate, RecipeFullOut, RecipeIngredientCreate, RecipeStageCreate
 from src.core import settings
@@ -223,16 +224,16 @@ async def get_recipe_by_id(db: AsyncSession, id: int) -> RecipeFullOut:
             selectinload(Recipe.stages),
             selectinload(Recipe.ingredients).selectinload(RecipeIngredient.ingredient),
             selectinload(Recipe.ingredients).selectinload(RecipeIngredient.unit),
-            selectinload(Recipe.tags),  # <--- ВАЖНО: Загрузка tags
+            selectinload(Recipe.tags),
         )
     )
-    return RecipeFullOut.model_validate(recipe.scalars().one())
-
-from sqlalchemy import select, func, asc, desc
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-from src.models.recipe import Recipe, DifficultyEnum, RecipeIngredient, Tag
-from typing import Optional, List, Tuple
+    recipe_obj = recipe.scalars().one_or_none()
+    if recipe_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Рецепт с id={id} не найден."
+        )
+    return RecipeFullOut.model_validate(recipe_obj)
 
 async def get_recipes_list_service(
     db: AsyncSession,
