@@ -96,6 +96,8 @@ class RecipeFullOut(BaseModel):
     calories: float
     photo_url: Optional[str] = None
 
+    likes_count: int = 0
+
     stages: List[RecipeStageOut]
     ingredients: List[RecipeIngredientOut]
     tags: List[TagOut]

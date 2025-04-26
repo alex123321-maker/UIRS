@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, String, Integer, Boolean, DateTime, Float,
-    Enum as SAEnum, ForeignKey, Text, Table
+    Enum as SAEnum, ForeignKey, Text, Table, UniqueConstraint
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -94,3 +94,14 @@ class Tag(Base):
     recipes = relationship("Recipe", secondary=recipe_tags, back_populates="tags")
 
 
+
+class RecipeLike(Base):
+    __tablename__ = "recipe_likes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "recipe_id", name="unique_user_recipe_like"),
+    )

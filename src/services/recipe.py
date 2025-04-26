@@ -4,12 +4,12 @@ from typing import Optional, List, Tuple
 
 from fastapi import HTTPException, status, UploadFile
 from sqlalchemy import select, desc, func, asc
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.recipe import (
     Recipe, RecipeStage, RecipeIngredient,
-    Ingredient, Tag, UnitOfMeasurement, DifficultyEnum,
+    Ingredient, Tag, UnitOfMeasurement, DifficultyEnum, RecipeLike,
 )
 from src.schemas.recipe import RecipeCreate, RecipeFullOut, RecipeIngredientCreate, RecipeStageCreate
 from src.core import settings
@@ -216,24 +216,34 @@ async def validate_tags(db: AsyncSession, tag_ids: list[int]) -> None:
         )
 
 
+
 async def get_recipe_by_id(db: AsyncSession, id: int) -> RecipeFullOut:
     recipe = await db.execute(
-        select(Recipe)
-        .where(Recipe.id == id)
-        .options(
-            selectinload(Recipe.stages),
-            selectinload(Recipe.ingredients).selectinload(RecipeIngredient.ingredient),
-            selectinload(Recipe.ingredients).selectinload(RecipeIngredient.unit),
-            selectinload(Recipe.tags),
+        select(
+            Recipe,
+            func.count(RecipeLike.id).label("likes_count")
         )
+        .outerjoin(RecipeLike, Recipe.id == RecipeLike.recipe_id)
+        .options(
+            joinedload(Recipe.stages),
+            joinedload(Recipe.ingredients).joinedload(RecipeIngredient.ingredient),
+            joinedload(Recipe.ingredients).joinedload(RecipeIngredient.unit),
+            joinedload(Recipe.tags),
+        )
+        .where(Recipe.id == id)
+        .group_by(Recipe.id)
     )
-    recipe_obj = recipe.scalars().one_or_none()
-    if recipe_obj is None:
+    row = recipe.unique().first()
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Рецепт с id={id} не найден."
         )
-    return RecipeFullOut.model_validate(recipe_obj)
+    recipe_obj, likes_count = row
+    result = RecipeFullOut.model_validate(recipe_obj)
+    result.likes_count = likes_count
+    return result
+
 
 async def get_recipes_list_service(
     db: AsyncSession,
@@ -244,44 +254,60 @@ async def get_recipes_list_service(
     difficulty: Optional[DifficultyEnum] = None,
     tag_ids: Optional[List[int]] = None,
     ingredient_ids: Optional[List[int]] = None,
-    sort_by: Optional[str] = None,  # 'date' или 'calories'
-    sort_order: Optional[str] = None  # 'asc' или 'desc'
-) -> Tuple[List[Recipe], int]:
+    sort_by: Optional[str] = None,
+    sort_order: Optional[str] = None
+) -> Tuple[List[RecipeFullOut], int]:
 
-    stmt = select(Recipe).where(Recipe.is_published == True).options(
-        selectinload(Recipe.tags),
-        selectinload(Recipe.ingredients).selectinload(RecipeIngredient.ingredient),
-        selectinload(Recipe.ingredients).selectinload(RecipeIngredient.unit),
-        selectinload(Recipe.stages)
+    base_stmt = select(
+        Recipe,
+        func.count(RecipeLike.id).label("likes_count")
+    ).outerjoin(RecipeLike, Recipe.id == RecipeLike.recipe_id).options(
+        joinedload(Recipe.stages),
+        joinedload(Recipe.ingredients).joinedload(RecipeIngredient.ingredient),
+        joinedload(Recipe.ingredients).joinedload(RecipeIngredient.unit),
+        joinedload(Recipe.tags),
     )
 
+    base_stmt = base_stmt.where(Recipe.is_published == True)
+
     if title:
-        stmt = stmt.where(Recipe.title.ilike(f"%{title}%"))
+        base_stmt = base_stmt.where(Recipe.title.ilike(f"%{title}%"))
     if author_id:
-        stmt = stmt.where(Recipe.author_id == author_id)
+        base_stmt = base_stmt.where(Recipe.author_id == author_id)
     if difficulty:
-        stmt = stmt.where(Recipe.difficulty == difficulty)
+        base_stmt = base_stmt.where(Recipe.difficulty == difficulty)
 
     if tag_ids:
         for tag_id in tag_ids:
-            stmt = stmt.where(Recipe.tags.any(Tag.id == tag_id))
+            base_stmt = base_stmt.where(Recipe.tags.any(Tag.id == tag_id))
 
     if ingredient_ids:
         for ing_id in ingredient_ids:
-            stmt = stmt.where(Recipe.ingredients.any(RecipeIngredient.ingredient_id == ing_id))
+            base_stmt = base_stmt.where(Recipe.ingredients.any(RecipeIngredient.ingredient_id == ing_id))
+
+    base_stmt = base_stmt.group_by(Recipe.id)
 
     if sort_by == "date":
-        stmt = stmt.order_by(desc(Recipe.published_at) if sort_order == "desc" else asc(Recipe.published_at))
+        base_stmt = base_stmt.order_by(desc(Recipe.published_at) if sort_order == "desc" else asc(Recipe.published_at))
     elif sort_by == "calories":
-        stmt = stmt.order_by(desc(Recipe.calories) if sort_order == "desc" else asc(Recipe.calories))
+        base_stmt = base_stmt.order_by(desc(Recipe.calories) if sort_order == "desc" else asc(Recipe.calories))
+    else:
+        base_stmt = base_stmt.order_by(desc(Recipe.created_at))
 
-    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
-    stmt = stmt.offset((page - 1) * limit).limit(limit)
+    total = await db.scalar(select(func.count()).select_from(base_stmt.subquery()))
+    stmt = base_stmt.offset((page - 1) * limit).limit(limit)
 
     result = await db.execute(stmt)
-    recipes = result.scalars().all()
+    rows = result.unique().all()
 
-    return recipes, total
+    recipes_out = []
+    for recipe_obj, likes_count in rows:
+        recipe_out = RecipeFullOut.model_validate(recipe_obj)
+        recipe_out.likes_count = likes_count
+        recipes_out.append(recipe_out)
+
+    return recipes_out, total
+
 
 async def get_my_recipes_service(
     db: AsyncSession,
@@ -290,29 +316,40 @@ async def get_my_recipes_service(
     limit: int,
     is_published: Optional[bool] = None,
     sort_order: Optional[str] = None,
-) -> Tuple[List[Recipe], int]:
-    """
-    Возвращает рецепты пользователя с фильтрацией по публикации и сортировкой по дате публикации.
-    """
-    stmt = select(Recipe).options(
-        selectinload(Recipe.tags),
-        selectinload(Recipe.ingredients).selectinload(RecipeIngredient.ingredient),
-        selectinload(Recipe.ingredients).selectinload(RecipeIngredient.unit),
-        selectinload(Recipe.stages)
-    ).where(Recipe.author_id == user_id)
+) -> Tuple[List[RecipeFullOut], int]:
+
+    base_stmt = select(
+        Recipe,
+        func.count(RecipeLike.id).label("likes_count")
+    ).outerjoin(RecipeLike, Recipe.id == RecipeLike.recipe_id).options(
+        joinedload(Recipe.stages),
+        joinedload(Recipe.ingredients).joinedload(RecipeIngredient.ingredient),
+        joinedload(Recipe.ingredients).joinedload(RecipeIngredient.unit),
+        joinedload(Recipe.tags),
+    )
+
+    base_stmt = base_stmt.where(Recipe.author_id == user_id)
 
     if is_published is not None:
-        stmt = stmt.where(Recipe.is_published == is_published)
+        base_stmt = base_stmt.where(Recipe.is_published == is_published)
 
-    # Сортировка по дате публикации
-    stmt = stmt.order_by(
+    base_stmt = base_stmt.group_by(Recipe.id)
+
+    base_stmt = base_stmt.order_by(
         desc(Recipe.published_at) if sort_order == "desc" else asc(Recipe.published_at)
     )
 
-    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
-    stmt = stmt.offset((page - 1) * limit).limit(limit)
+    total = await db.scalar(select(func.count()).select_from(base_stmt.subquery()))
+    stmt = base_stmt.offset((page - 1) * limit).limit(limit)
 
     result = await db.execute(stmt)
-    recipes = result.scalars().all()
+    rows = result.unique().all()
 
-    return recipes, total
+    recipes_out = []
+    for recipe_obj, likes_count in rows:
+        recipe_out = RecipeFullOut.model_validate(recipe_obj)
+        recipe_out.likes_count = likes_count
+        recipes_out.append(recipe_out)
+
+    return recipes_out, total
+
