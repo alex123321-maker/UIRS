@@ -1,224 +1,53 @@
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 
 from fastapi import HTTPException, status, UploadFile
 from sqlalchemy import select, desc, func, asc
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.recipe import (
-    Recipe, RecipeStage, RecipeIngredient,
-    Ingredient, Tag, UnitOfMeasurement, DifficultyEnum, RecipeLike,
+    Recipe,
+    RecipeStage,
+    RecipeIngredient,
+    Ingredient,
+    Tag,
+    UnitOfMeasurement,
+    DifficultyEnum,
+    RecipeLike,
 )
-from src.schemas.recipe import RecipeCreate, RecipeFullOut, RecipeIngredientCreate, RecipeStageCreate
+from src.schemas.recipe import (
+    RecipeCreate,
+    RecipeFullOut,
+    RecipeIngredientCreate,
+    RecipeStageCreate,
+)
 from src.core import settings
 
 
-async def validate_units(db: AsyncSession, ingredients_in: list[RecipeIngredientCreate]) -> None:
-    """
-    Проверяем, что все переданные unit_id есть в таблице единиц измерения.
-    Если какого-то unit_id не существует — выкидываем 400 ошибку.
-    """
-    if not ingredients_in:
-        return
+# ————————————————————————————————————————————————————————————
+# Helpers
+# ————————————————————————————————————————————————————————————
 
-    # Собираем все unit_id (уберём повторения, если нужно)
-    unit_ids = {x.unit_id for x in ingredients_in if x.unit_id is not None}
-    if not unit_ids:
-        return
-
-    res_units = await db.execute(
-        select(UnitOfMeasurement.id).where(UnitOfMeasurement.id.in_(unit_ids))
-    )
-    found_unit_ids = {row[0] for row in res_units}
-    missing_units = unit_ids - found_unit_ids
-    if missing_units:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Некоторые unit_id не найдены: {missing_units}"
-        )
-
-async def create_recipe_service(
+async def _is_liked(
     db: AsyncSession,
-    recipe_in: RecipeCreate,
     user_id: int,
-    preview_image: UploadFile | None,
-    stage_images: dict[int, UploadFile] | None
-) -> RecipeFullOut:
-    """
-    Создаёт рецепт вместе с этапами, ингредиентами и тегами,
-    загружает фотографии, валидирует данные.
-    Возвращает рецепт во вложенном виде.
-    """
-
-    # 1. Валидация ингредиентов и тегов
-    await validate_ingredients(db, recipe_in.ingredients)
-    await validate_tags(db, recipe_in.tags)
-    await validate_units(db, recipe_in.ingredients)
-    # 2. Создаём модель рецепта
-    new_recipe = Recipe(
-        author_id=user_id,
-        title=recipe_in.title,
-        description=recipe_in.description,
-        calories=recipe_in.calories or 0.0,
-        is_published=recipe_in.is_published,
-        difficulty=recipe_in.difficulty,
-        created_at=datetime.utcnow(),
-    )
-    if recipe_in.is_published:
-        new_recipe.published_at = datetime.utcnow()
-
-    db.add(new_recipe)
-    # нужен flush, чтобы получить new_recipe.id
-    await db.flush()
-
-    # 3. Создаём папку media/{id}, сохраняем превью, если есть
-    media_dir = Path(settings.BASE_DIR) / "media" / f"{new_recipe.id}"
-    media_dir.mkdir(parents=True, exist_ok=True)
-
-    if preview_image is not None:
-        await save_preview_image(preview_image, media_dir, new_recipe)
-
-    # 4. Создаём стадии (этапы) и привязываем к ним фото
-    if stage_images is None:
-        stage_images = {}
-    await create_and_save_stages(
-        db,
-        new_recipe.id,
-        recipe_in.stages,
-        stage_images,
-        media_dir
-    )
-
-    # 5. Создаём записи с ингредиентами
-    await save_recipe_ingredients(db, new_recipe.id, recipe_in.ingredients)
-
-    # 6. Создаём связи с тегами
-    await save_recipe_tags(db, new_recipe, recipe_in.tags)
-
-
-    # 7. Обновляем объект рецепта, чтобы подгрузить все изменения
-    await db.refresh(new_recipe)
-
-    stmt = (
-        select(Recipe)
-        .options(
-            selectinload(Recipe.stages),
-            selectinload(Recipe.ingredients).selectinload(RecipeIngredient.ingredient),
-            selectinload(Recipe.ingredients).selectinload(RecipeIngredient.unit),
-            # Теперь tags у нас уже список Tag, поэтому достаточно
-            selectinload(Recipe.tags),
+    recipe_id: int
+) -> bool:
+    cnt = await db.scalar(
+        select(func.count())
+        .select_from(RecipeLike)
+        .where(
+            RecipeLike.user_id == user_id,
+            RecipeLike.recipe_id == recipe_id,
         )
-        .where(Recipe.id == new_recipe.id)
     )
-    result = await db.execute(stmt)
-    recipe_loaded = result.scalar_one()
-
-    return RecipeFullOut.model_validate(recipe_loaded)
-
-async def create_and_save_stages(
-    db: AsyncSession,
-    recipe_id: int,
-    stages_in: list[RecipeStageCreate],
-    stage_images: dict[int, UploadFile],
-    media_dir: Path
-) -> None:
-    for stage_in in stages_in:
-        stage = RecipeStage(
-            recipe_id=recipe_id,
-            title=stage_in.title,
-            order_index=stage_in.order_index,
-            description=stage_in.description,
-            minutes=stage_in.minutes,
-        )
-        db.add(stage)
-        await db.flush()  # Чтобы получить stage.id
-
-        # Проверяем, есть ли фото для этого шага
-        if stage_in.order_index in stage_images:
-            stage_file = stage_images[stage_in.order_index]
-            stage_path = media_dir / f"{stage_in.order_index}.jpg"
-            with stage_path.open("wb") as f:
-                f.write(await stage_file.read())
-            stage.photo_url = f"/media/{recipe_id}/{stage_in.order_index}.jpg"
-
-async def save_recipe_ingredients(
-    db: AsyncSession,
-    recipe_id: int,
-    ingredients_in: list[RecipeIngredientCreate]
-) -> None:
-    for ingr_in in ingredients_in:
-        rec_ingr = RecipeIngredient(
-            recipe_id=recipe_id,
-            ingredient_id=ingr_in.ingredient_id,
-            unit_id=ingr_in.unit_id,
-            quantity=ingr_in.quantity
-        )
-        db.add(rec_ingr)
+    return cnt > 0
 
 
-async def save_recipe_tags(
-    db: AsyncSession,
-    recipe: Recipe,
-    tag_ids: list[int]
-) -> None:
-    if not tag_ids:
-        return
-    result = await db.execute(
-        select(Tag).where(Tag.id.in_(tag_ids))
-    )
-    tags = result.scalars().all()
-    # Выполняем присваивание в синхронном контексте
-    await db.run_sync(lambda sync_session: setattr(recipe, 'tags', tags))
-
-async def save_preview_image(
-    preview_image: UploadFile,
-    media_dir: Path,
-    recipe: Recipe
-) -> None:
-    preview_path = media_dir / "preview.jpg"
-    with preview_path.open("wb") as f:
-        f.write(await preview_image.read())
-    recipe.photo_url = f"/media/{recipe.id}/preview.jpg"
-
-
-async def validate_ingredients(db: AsyncSession, ingredients: list[RecipeIngredientCreate]) -> None:
-    if not ingredients:
-        return
-
-    ingredient_ids = [x.ingredient_id for x in ingredients]
-    res_ingr = await db.execute(
-        select(Ingredient.id).where(Ingredient.id.in_(ingredient_ids))
-    )
-    found_ingr_ids = {row[0] for row in res_ingr}
-    missing = set(ingredient_ids) - found_ingr_ids
-    if missing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Некоторые ingredient_id не найдены: {missing}"
-        )
-
-
-async def validate_tags(db: AsyncSession, tag_ids: list[int]) -> None:
-    if not tag_ids:
-        return
-
-    res_tags = await db.execute(
-        select(Tag.id).where(Tag.id.in_(tag_ids))
-    )
-    found_tag_ids = {row[0] for row in res_tags}
-    missing_tags = set(tag_ids) - found_tag_ids
-    if missing_tags:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Некоторые tag_id не найдены: {missing_tags}"
-        )
-
-
-
-async def get_recipe_by_id(db: AsyncSession, id: int) -> RecipeFullOut:
-    recipe = await db.execute(
+def _base_recipe_query() -> Any:
+    return (
         select(
             Recipe,
             func.count(RecipeLike.id).label("likes_count")
@@ -230,19 +59,211 @@ async def get_recipe_by_id(db: AsyncSession, id: int) -> RecipeFullOut:
             joinedload(Recipe.ingredients).joinedload(RecipeIngredient.unit),
             joinedload(Recipe.tags),
         )
-        .where(Recipe.id == id)
-        .group_by(Recipe.id)
     )
-    row = recipe.unique().first()
+
+
+async def _paginate_and_prepare(
+    db: AsyncSession,
+    stmt: Any,
+    page: int,
+    limit: int,
+    user_id: Optional[int] = None,
+) -> Tuple[List[RecipeFullOut], int]:
+    total = await db.scalar(
+        select(func.count()).select_from(stmt.subquery())
+    )
+    stmt = stmt.offset((page - 1) * limit).limit(limit)
+    result = await db.execute(stmt)
+    rows = result.unique().all()
+
+    out_list: List[RecipeFullOut] = []
+    for recipe_obj, likes_count in rows:
+        out = RecipeFullOut.model_validate(recipe_obj)
+        out.likes_count = likes_count
+        out.is_liked_by_me = (
+            await _is_liked(db, user_id, out.id)
+            if user_id is not None
+            else None
+        )
+        out_list.append(out)
+
+    return out_list, total
+
+
+async def validate_ingredients(
+    db: AsyncSession,
+    ingredients: list[RecipeIngredientCreate],
+) -> None:
+    if not ingredients:
+        return
+
+    ids = [i.ingredient_id for i in ingredients]
+    res = await db.execute(
+        select(Ingredient.id).where(Ingredient.id.in_(ids))
+    )
+    found = {r[0] for r in res}
+    missing = set(ids) - found
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Некоторые ingredient_id не найдены: {missing}",
+        )
+
+
+async def validate_tags(
+    db: AsyncSession,
+    tag_ids: list[int],
+) -> None:
+    if not tag_ids:
+        return
+
+    res = await db.execute(
+        select(Tag.id).where(Tag.id.in_(tag_ids))
+    )
+    found = {r[0] for r in res}
+    missing = set(tag_ids) - found
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Некоторые tag_id не найдены: {missing}",
+        )
+
+
+async def save_preview_image(
+    preview_image: UploadFile,
+    media_dir: Path,
+    recipe: Recipe,
+) -> None:
+    preview_path = media_dir / "preview.jpg"
+    with preview_path.open("wb") as f:
+        f.write(await preview_image.read())
+    recipe.photo_url = f"/media/{recipe.id}/preview.jpg"
+
+
+async def create_and_save_stages(
+    db: AsyncSession,
+    recipe_id: int,
+    stages_in: list[RecipeStageCreate],
+    stage_images: dict[int, UploadFile],
+    media_dir: Path,
+) -> None:
+    for stage in stages_in:
+        obj = RecipeStage(
+            recipe_id=recipe_id,
+            title=stage.title,
+            order_index=stage.order_index,
+            description=stage.description,
+            minutes=stage.minutes,
+        )
+        db.add(obj)
+        await db.flush()
+
+        if stage.order_index in stage_images:
+            img = stage_images[stage.order_index]
+            path = media_dir / f"{stage.order_index}.jpg"
+            with path.open("wb") as f:
+                f.write(await img.read())
+            obj.photo_url = f"/media/{recipe_id}/{stage.order_index}.jpg"
+
+
+async def save_recipe_ingredients(
+    db: AsyncSession,
+    recipe_id: int,
+    ingredients_in: list[RecipeIngredientCreate],
+) -> None:
+    for ingr in ingredients_in:
+        db.add(
+            RecipeIngredient(
+                recipe_id=recipe_id,
+                ingredient_id=ingr.ingredient_id,
+                unit_id=ingr.unit_id,
+                quantity=ingr.quantity,
+            )
+        )
+
+
+async def save_recipe_tags(
+    db: AsyncSession,
+    recipe: Recipe,
+    tag_ids: list[int],
+) -> None:
+    if not tag_ids:
+        return
+
+    res = await db.execute(
+        select(Tag).where(Tag.id.in_(tag_ids))
+    )
+    tags = res.scalars().all()
+    await db.run_sync(lambda sess: setattr(recipe, "tags", tags))
+
+
+async def create_recipe_service(
+    db: AsyncSession,
+    recipe_in: RecipeCreate,
+    user_id: int,
+    preview_image: UploadFile | None,
+    stage_images: dict[int, UploadFile] | None,
+) -> RecipeFullOut:
+    await validate_ingredients(db, recipe_in.ingredients)
+    await validate_tags(db, recipe_in.tags)
+    await validate_units(db, recipe_in.ingredients)
+
+    new = Recipe(
+        author_id=user_id,
+        title=recipe_in.title,
+        description=recipe_in.description,
+        calories=recipe_in.calories or 0.0,
+        is_published=recipe_in.is_published,
+        difficulty=recipe_in.difficulty,
+        created_at=datetime.utcnow(),
+    )
+    if recipe_in.is_published:
+        new.published_at = datetime.utcnow()
+
+    db.add(new)
+    await db.flush()
+
+    media_dir = Path(settings.BASE_DIR) / "media" / str(new.id)
+    media_dir.mkdir(parents=True, exist_ok=True)
+
+    if preview_image:
+        await save_preview_image(preview_image, media_dir, new)
+
+    await create_and_save_stages(
+        db, new.id, recipe_in.stages, stage_images or {}, media_dir
+    )
+    await save_recipe_ingredients(db, new.id, recipe_in.ingredients)
+    await save_recipe_tags(db, new, recipe_in.tags)
+
+    await db.refresh(new)
+    return await get_recipe_by_id(db, new.id)
+
+
+# ————————————————————————————————————————————————————————————
+# Read / List Recipes
+# ————————————————————————————————————————————————————————————
+
+async def get_recipe_by_id(
+    db: AsyncSession,
+    id: int,
+    user_id: Optional[int] = None,
+) -> RecipeFullOut:
+    stmt = _base_recipe_query().where(Recipe.id == id).group_by(Recipe.id)
+    result = await db.execute(stmt)
+    row = result.unique().first()
+
     if not row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Рецепт с id={id} не найден."
+            detail=f"Recipe with id={id} not found",
         )
+
     recipe_obj, likes_count = row
-    result = RecipeFullOut.model_validate(recipe_obj)
-    result.likes_count = likes_count
-    return result
+    out = RecipeFullOut.model_validate(recipe_obj)
+    out.likes_count = likes_count
+    print(user_id)
+    out.is_liked_by_me = await _is_liked(db, user_id, id) if user_id else None
+    return out
 
 
 async def get_recipes_list_service(
@@ -252,61 +273,43 @@ async def get_recipes_list_service(
     title: Optional[str] = None,
     author_id: Optional[int] = None,
     difficulty: Optional[DifficultyEnum] = None,
+    liked_by_me: bool = False,
     tag_ids: Optional[List[int]] = None,
     ingredient_ids: Optional[List[int]] = None,
     sort_by: Optional[str] = None,
-    sort_order: Optional[str] = None
+    sort_order: Optional[str] = None,
+    user_id: Optional[int] = None,
 ) -> Tuple[List[RecipeFullOut], int]:
-
-    base_stmt = select(
-        Recipe,
-        func.count(RecipeLike.id).label("likes_count")
-    ).outerjoin(RecipeLike, Recipe.id == RecipeLike.recipe_id).options(
-        joinedload(Recipe.stages),
-        joinedload(Recipe.ingredients).joinedload(RecipeIngredient.ingredient),
-        joinedload(Recipe.ingredients).joinedload(RecipeIngredient.unit),
-        joinedload(Recipe.tags),
-    )
-
-    base_stmt = base_stmt.where(Recipe.is_published == True)
+    stmt = _base_recipe_query().where(Recipe.is_published.is_(True))
 
     if title:
-        base_stmt = base_stmt.where(Recipe.title.ilike(f"%{title}%"))
+        stmt = stmt.where(Recipe.title.ilike(f"%{title}%"))
     if author_id:
-        base_stmt = base_stmt.where(Recipe.author_id == author_id)
+        stmt = stmt.where(Recipe.author_id == author_id)
     if difficulty:
-        base_stmt = base_stmt.where(Recipe.difficulty == difficulty)
+        stmt = stmt.where(Recipe.difficulty == difficulty)
 
     if tag_ids:
-        for tag_id in tag_ids:
-            base_stmt = base_stmt.where(Recipe.tags.any(Tag.id == tag_id))
-
+        for tid in tag_ids:
+            stmt = stmt.where(Recipe.tags.any(Tag.id == tid))
     if ingredient_ids:
-        for ing_id in ingredient_ids:
-            base_stmt = base_stmt.where(Recipe.ingredients.any(RecipeIngredient.ingredient_id == ing_id))
+        for iid in ingredient_ids:
+            stmt = stmt.where(Recipe.ingredients.any(RecipeIngredient.ingredient_id == iid))
+    if liked_by_me:
+        if not user_id:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Требуется авторизация для фильтра по лайкам")
+        stmt = stmt.where(RecipeLike.user_id == user_id)
 
-    base_stmt = base_stmt.group_by(Recipe.id)
+    stmt = stmt.group_by(Recipe.id)
 
     if sort_by == "date":
-        base_stmt = base_stmt.order_by(desc(Recipe.published_at) if sort_order == "desc" else asc(Recipe.published_at))
+        stmt = stmt.order_by(desc(Recipe.published_at) if sort_order == "desc" else asc(Recipe.published_at))
     elif sort_by == "calories":
-        base_stmt = base_stmt.order_by(desc(Recipe.calories) if sort_order == "desc" else asc(Recipe.calories))
+        stmt = stmt.order_by(desc(Recipe.calories) if sort_order == "desc" else asc(Recipe.calories))
     else:
-        base_stmt = base_stmt.order_by(desc(Recipe.created_at))
+        stmt = stmt.order_by(desc(Recipe.created_at))
 
-    total = await db.scalar(select(func.count()).select_from(base_stmt.subquery()))
-    stmt = base_stmt.offset((page - 1) * limit).limit(limit)
-
-    result = await db.execute(stmt)
-    rows = result.unique().all()
-
-    recipes_out = []
-    for recipe_obj, likes_count in rows:
-        recipe_out = RecipeFullOut.model_validate(recipe_obj)
-        recipe_out.likes_count = likes_count
-        recipes_out.append(recipe_out)
-
-    return recipes_out, total
+    return await _paginate_and_prepare(db, stmt, page, limit, user_id)
 
 
 async def get_my_recipes_service(
@@ -317,39 +320,12 @@ async def get_my_recipes_service(
     is_published: Optional[bool] = None,
     sort_order: Optional[str] = None,
 ) -> Tuple[List[RecipeFullOut], int]:
-
-    base_stmt = select(
-        Recipe,
-        func.count(RecipeLike.id).label("likes_count")
-    ).outerjoin(RecipeLike, Recipe.id == RecipeLike.recipe_id).options(
-        joinedload(Recipe.stages),
-        joinedload(Recipe.ingredients).joinedload(RecipeIngredient.ingredient),
-        joinedload(Recipe.ingredients).joinedload(RecipeIngredient.unit),
-        joinedload(Recipe.tags),
-    )
-
-    base_stmt = base_stmt.where(Recipe.author_id == user_id)
+    stmt = _base_recipe_query().where(Recipe.author_id == user_id)
 
     if is_published is not None:
-        base_stmt = base_stmt.where(Recipe.is_published == is_published)
+        stmt = stmt.where(Recipe.is_published == is_published)
 
-    base_stmt = base_stmt.group_by(Recipe.id)
+    stmt = stmt.group_by(Recipe.id)
+    stmt = stmt.order_by(desc(Recipe.published_at) if sort_order == "desc" else asc(Recipe.published_at))
 
-    base_stmt = base_stmt.order_by(
-        desc(Recipe.published_at) if sort_order == "desc" else asc(Recipe.published_at)
-    )
-
-    total = await db.scalar(select(func.count()).select_from(base_stmt.subquery()))
-    stmt = base_stmt.offset((page - 1) * limit).limit(limit)
-
-    result = await db.execute(stmt)
-    rows = result.unique().all()
-
-    recipes_out = []
-    for recipe_obj, likes_count in rows:
-        recipe_out = RecipeFullOut.model_validate(recipe_obj)
-        recipe_out.likes_count = likes_count
-        recipes_out.append(recipe_out)
-
-    return recipes_out, total
-
+    return await _paginate_and_prepare(db, stmt, page, limit, user_id)

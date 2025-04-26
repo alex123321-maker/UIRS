@@ -27,3 +27,5 @@ async def toggle_like(user_id: int, recipe_id: int, session: AsyncSession) -> bo
         session.add(new_like)
         await session.commit()
         return True
+
+

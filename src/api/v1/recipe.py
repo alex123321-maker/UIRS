@@ -4,7 +4,7 @@ from fastapi.params import Query, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies.database import get_session
-from src.api.dependencies.auth import get_current_user
+from src.api.dependencies.auth import get_current_user, get_current_user_optional
 from src.api.dependencies.pagination import PaginationParams, get_pagination_params
 from src.schemas.common import PaginatedResponse
 from src.schemas.recipe import RecipeCreate, RecipeFullOut, DifficultyEnum
@@ -139,14 +139,14 @@ async def get_my_recipes(
         page=page,
         limit=limit,
         is_published=is_published,
-        sort_order=sort_order
+        sort_order=sort_order,
     )
 
-    return PaginatedResponse[RecipeFullOut](
+    return PaginatedResponse(
         items=recipes,
         results=total,
         current_page=page,
-        total_pages=(total // limit + int(total % limit != 0))
+        total_pages=(total // limit + int(total % limit != 0)),
     )
 
 
@@ -154,9 +154,11 @@ async def get_my_recipes(
 async def get_recipe(
     recipe_id: int = Path(...),
     db: AsyncSession = Depends(get_session),
+    optional_user: Optional[UserFromDB] = Depends(get_current_user_optional),
+
 )-> RecipeFullOut:
 
-    return await get_recipe_by_id(db=db, id=recipe_id)
+    return await get_recipe_by_id(db=db, id=recipe_id,user_id=optional_user.id if optional_user is not None else None )
 
 @router.get(
     "/",
@@ -169,6 +171,7 @@ async def get_recipe(
 ### Фильтрация:
 - `title` — фильтрация по части названия (поиск по подстроке).
 - `author_id` — фильтрация по автору (ID пользователя).
+- `licked` — показать только лайкнутые мною рецепты.(для не авторизованных пользователей ошибка) 
 - `difficulty` — фильтрация по сложности (EASY, MEDIUM, HARD).
 - `tag_ids` — фильтрация по тегам. Если передано несколько ID, вернутся только рецепты, содержащие **все указанные теги**.
 - `ingredient_ids` — фильтрация по ингредиентам. Если передано несколько ID, вернутся только рецепты, содержащие **все указанные ингредиенты**.
@@ -206,6 +209,8 @@ async def get_recipes_list(
     sort_order: Optional[str] = Query(
         "desc", regex="^(asc|desc)$", description="Порядок сортировки: asc (по возрастанию) или desc (по убыванию)"
     ),
+    liked: bool = Query(False, description="Показать только лайкнутые мною рецепты"),
+    optional_user: Optional[UserFromDB] = Depends(get_current_user_optional),
 ) -> PaginatedResponse[RecipeFullOut]:
     """
     Эндпоинт возвращает список рецептов с возможностью гибкой фильтрации, сортировки и пагинации.
@@ -219,15 +224,17 @@ async def get_recipes_list(
         title=title,
         author_id=author_id,
         difficulty=difficulty,
+        liked_by_me=liked,
         tag_ids=tag_ids,
         ingredient_ids=ingredient_ids,
         sort_by=sort_by,
-        sort_order=sort_order
+        sort_order=sort_order,
+        user_id=(optional_user.id if optional_user else None),
     )
 
-    return PaginatedResponse[RecipeFullOut](
+    return PaginatedResponse(
         items=recipes,
         results=total,
         current_page=page,
-        total_pages=(total // limit + int(total % limit != 0))
+        total_pages=(total // limit + int(total % limit != 0)),
     )

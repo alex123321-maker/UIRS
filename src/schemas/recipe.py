@@ -97,6 +97,7 @@ class RecipeFullOut(BaseModel):
     photo_url: Optional[str] = None
 
     likes_count: int = 0
+    is_liked_by_me: Optional[bool] = None
 
     stages: List[RecipeStageOut]
     ingredients: List[RecipeIngredientOut]
