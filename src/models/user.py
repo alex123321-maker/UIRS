@@ -13,6 +13,12 @@ class User(Base):
     salt = Column(String(255), nullable=False)
     hashed_password = Column(String(256), nullable=True)
     recipes = relationship("Recipe", back_populates="author")
+
+    meal_plans = relationship(
+        "MealPlan",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+    )
     def check_password(self, password: str) -> bool:
         return security.verify_password(self.salt + password, self.hashed_password)
 
