@@ -91,29 +91,6 @@ async def _paginate_and_prepare(
 
 
 
-async def validate_units(
-    db: AsyncSession,
-    ingredients: list[RecipeIngredientCreate],
-) -> None:
-    """
-    Проверяет, что все unit_id из списка ингредиентов существуют в таблице UnitOfMeasurement.
-    Если какой-то unit_id не найден — бросает HTTPException 400.
-    """
-    if not ingredients:
-        return
-
-    unit_ids = [i.unit_id for i in ingredients]
-    res = await db.execute(
-        select(UnitOfMeasurement.id).where(UnitOfMeasurement.id.in_(unit_ids))
-    )
-    found = {r[0] for r in res}
-    missing = set(unit_ids) - found
-    if missing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Некоторые unit_id не найдены: {missing}",
-        )
-
 
 async def validate_ingredients(
     db: AsyncSession,

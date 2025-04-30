@@ -8,7 +8,7 @@
   icon_url: null
 - name: Патиссоны
   icon_url: null
-- name: Перец
+- name: Чёрный перец
   icon_url: null
 - name: Картофель
   icon_url: null
@@ -255,4 +255,10 @@
 - name: Скумбрия
   icon_url: null
 - name: Тунец
+  icon_url: null
+- name: Бекон
+  icon_url: null
+- name: Пармезан
+  icon_url: null
+- name: Бекон
   icon_url: null
