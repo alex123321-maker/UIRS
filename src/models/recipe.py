@@ -31,6 +31,7 @@ class Recipe(Base):
     created_at = Column(DateTime, server_default=func.now())
     published_at = Column(DateTime, nullable=True)
     is_published = Column(Boolean, default=False)
+    servings = Column(Integer, default=1, nullable=False)
     difficulty = Column(SAEnum(DifficultyEnum), default=DifficultyEnum.EASY)
     calories = Column(Float, default=0.0)
     photo_url = Column(String, nullable=True)

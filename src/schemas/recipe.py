@@ -3,6 +3,8 @@ from typing import Optional, List
 import datetime
 from enum import Enum
 
+from src.schemas.user import UserFromDB
+
 
 class DifficultyEnum(str, Enum):
     EASY = "EASY"
@@ -37,11 +39,21 @@ class RecipeCreate(BaseModel):
     calories: Optional[float] = None
     is_published: bool = False
     difficulty: DifficultyEnum = DifficultyEnum.EASY
-
+    servings: int = Field(1, ge=1, description="Количество порций")
     stages: List[RecipeStageCreate] = []
     ingredients: List[RecipeIngredientCreate] = []
     tags: List[int] = []
 
+class RecipeUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    calories: Optional[float] = None
+    is_published: Optional[bool] = None
+    difficulty: Optional[DifficultyEnum] = None
+    servings: Optional[int] = Field(None, ge=1)
+    tags: Optional[List[int]] = None
+    ingredients: Optional[List[RecipeIngredientCreate]] = None
+    stages: Optional[List[RecipeStageCreate]] = None
 
 
 
@@ -87,11 +99,13 @@ class RecipeFullOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    author: UserFromDB
     title: str
     description: Optional[str] = None
     created_at: datetime.datetime
     published_at: Optional[datetime.datetime] = None
     is_published: bool
+    servings: int
     difficulty: DifficultyEnum
     calories: float
     photo_url: Optional[str] = None

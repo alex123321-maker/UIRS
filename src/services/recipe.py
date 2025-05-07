@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, List, Tuple, Any
 
 from fastapi import HTTPException, status, UploadFile
-from sqlalchemy import select, desc, func, asc
+from sqlalchemy import select, desc, func, asc, delete
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,7 @@ from src.schemas.recipe import (
     RecipeCreate,
     RecipeFullOut,
     RecipeIngredientCreate,
-    RecipeStageCreate,
+    RecipeStageCreate, RecipeUpdate,
 )
 from src.core import settings
 
@@ -54,6 +54,7 @@ def _base_recipe_query() -> Any:
         )
         .outerjoin(RecipeLike, Recipe.id == RecipeLike.recipe_id)
         .options(
+            joinedload(Recipe.author),
             joinedload(Recipe.stages),
             joinedload(Recipe.ingredients).joinedload(RecipeIngredient.ingredient),
             joinedload(Recipe.ingredients).joinedload(RecipeIngredient.unit),
@@ -234,6 +235,7 @@ async def create_recipe_service(
     new = Recipe(
         author_id=user_id,
         title=recipe_in.title,
+        servings=recipe_in.servings,
         description=recipe_in.description,
         calories=recipe_in.calories or 0.0,
         is_published=recipe_in.is_published,
@@ -258,8 +260,7 @@ async def create_recipe_service(
     await save_recipe_ingredients(db, new.id, recipe_in.ingredients)
     await save_recipe_tags(db, new, recipe_in.tags)
 
-    await db.refresh(new)
-    return await get_recipe_by_id(db, new.id)
+    return await get_recipe_by_id(db, new.id,user_id)
 
 
 # ————————————————————————————————————————————————————————————
@@ -284,7 +285,6 @@ async def get_recipe_by_id(
     recipe_obj, likes_count = row
     out = RecipeFullOut.model_validate(recipe_obj)
     out.likes_count = likes_count
-    print(user_id)
     out.is_liked_by_me = await _is_liked(db, user_id, id) if user_id else None
     return out
 
@@ -352,3 +352,56 @@ async def get_my_recipes_service(
     stmt = stmt.order_by(desc(Recipe.published_at) if sort_order == "desc" else asc(Recipe.published_at))
 
     return await _paginate_and_prepare(db, stmt, page, limit, user_id)
+
+
+async def update_recipe_service(
+    db: AsyncSession,
+    recipe_id: int,
+    user_id: int,
+    data: RecipeUpdate,
+    preview_image: UploadFile | None = None,
+    stage_images: dict[int, UploadFile] | None = None,
+) -> RecipeFullOut:
+    # 1) достаём рецепт и проверяем авторство
+    recipe = await db.get(Recipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Рецепт с id={recipe_id} не найден")
+    if recipe.author_id != user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Нет доступа")
+
+    # 2) Обновляем простые поля, если они переданы
+    for field in ("title", "description", "calories", "is_published", "difficulty", "servings"):
+        val = getattr(data, field)
+        if val is not None:
+            setattr(recipe, field, val)
+            # если впервые публикуем
+            if field == "is_published" and val and recipe.published_at is None:
+                recipe.published_at = datetime.now()
+
+    # 3) Теги
+    if data.tags is not None:
+        await validate_tags(db, data.tags)
+        res = await db.execute(select(Tag).where(Tag.id.in_(data.tags)))
+        recipe.tags = res.scalars().all()
+
+    # 4) Ингредиенты
+    if data.ingredients is not None:
+        await validate_ingredients(db, data.ingredients)
+        # удалить старые
+        await db.execute(delete(RecipeIngredient).where(RecipeIngredient.recipe_id == recipe_id))
+        # добавить новые
+        await save_recipe_ingredients(db, recipe_id, data.ingredients)
+
+    # 5) Стадии
+    if data.stages is not None:
+        # удалить старые
+        await db.execute(delete(RecipeStage).where(RecipeStage.recipe_id == recipe_id))
+        await create_and_save_stages(db, recipe_id, data.stages, stage_images or {}, Path(settings.BASE_DIR) / "media" / str(recipe_id))
+
+    # 6) Обложка
+    if preview_image:
+        media_dir = Path(settings.BASE_DIR) / "media" / str(recipe_id)
+        await save_preview_image(preview_image, media_dir, recipe)
+
+    # 7) Сохраняем
+    return await get_recipe_by_id(db, recipe_id, user_id)
