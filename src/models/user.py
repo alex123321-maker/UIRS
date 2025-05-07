@@ -4,7 +4,6 @@ from src.models.rwmodel import RWModel as Base
 from sqlalchemy import Column, Integer, String
 
 
-
 class User(Base):
     __tablename__ = "users"
 
@@ -13,7 +12,11 @@ class User(Base):
     salt = Column(String(255), nullable=False)
     hashed_password = Column(String(256), nullable=True)
     recipes = relationship("Recipe", back_populates="author")
-
+    comments = relationship(
+        "Comment",
+        back_populates="author",
+        cascade="all, delete-orphan",
+    )
     meal_plans = relationship(
         "MealPlan",
         back_populates="owner",

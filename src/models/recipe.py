@@ -43,6 +43,7 @@ class Recipe(Base):
     ingredients = relationship("RecipeIngredient", back_populates="recipe")
     # Связь с объектом-ассоциацией RecipeTag
     tags = relationship("Tag", secondary=recipe_tags, back_populates="recipes")
+    comments = relationship("Comment", back_populates="recipe")
 
 class RecipeStage(Base):
     __tablename__ = "recipe_stages"
