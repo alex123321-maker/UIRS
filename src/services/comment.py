@@ -56,6 +56,7 @@ async def update_comment(
         comment.rating = data.rating
 
     await db.flush()
+    await db.commit()
     return comment
 
 async def delete_comment(
