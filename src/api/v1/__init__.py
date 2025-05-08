@@ -10,5 +10,5 @@ api_router.include_router(tag.router, prefix="/tag", tags=["tag"])
 api_router.include_router(ingredient.router, prefix="/ingredient", tags=["ingredient"])
 api_router.include_router(like.router, prefix="/like", tags=["like"])
 api_router.include_router(mealplan.router,prefix="/mealplan", tags=["mealplan"])
-api_router.include_router(comment.router,prefix="/recipe/{recipe_id}/comment", tags=["comments"])
+api_router.include_router(comment.router,prefix="/comment", tags=["comment"])
 

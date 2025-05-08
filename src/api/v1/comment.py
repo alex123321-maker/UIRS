@@ -14,7 +14,7 @@ from src.services.comment import (
 
 router = APIRouter()
 
-@router.get("/", response_model=List[Union[CommentOut, DeletedComment]])
+@router.get("/{recipe_id}", response_model=List[Union[CommentOut, DeletedComment]])
 async def list_comments(
     recipe_id: int = Path(..., ge=1),
     db: AsyncSession = Depends(get_session)
@@ -31,7 +31,7 @@ async def list_comments(
             out.append(CommentOut.model_validate(c))
     return out
 
-@router.post("/", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
+@router.post("/{recipe_id}", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
 async def add_comment(
     data: CommentCreate,
     recipe_id: int = Path(..., ge=1),
@@ -45,7 +45,6 @@ async def add_comment(
 @router.patch("/{comment_id}", response_model=CommentOut)
 async def edit_comment(
     data: CommentUpdate,
-    recipe_id: int = Path(..., ge=1),
     comment_id: int = Path(..., ge=1),
     db: AsyncSession = Depends(get_session),
     current_user = Depends(get_current_user),
@@ -55,7 +54,6 @@ async def edit_comment(
 
 @router.delete("/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_comment(
-    recipe_id: int = Path(..., ge=1),
     comment_id: int = Path(..., ge=1),
     db: AsyncSession = Depends(get_session),
     current_user = Depends(get_current_user),
