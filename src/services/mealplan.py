@@ -1,9 +1,17 @@
+# src/services/mealplan.py
+
 from datetime import date
-from sqlalchemy import select, and_, func
-from sqlalchemy.orm import joinedload
+from typing import List, Optional
+
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
+
+from fastapi import HTTPException, status
+
 from src.models.mealplan import MealPlan, DaySchedule, DayScheduleRecipe
+from src.models.recipe import Recipe
 from src.schemas.mealplan import (
     DayScheduleRecipeCreate,
     DayScheduleRecipeUpdate,
@@ -11,18 +19,43 @@ from src.schemas.mealplan import (
     MealPlanUpdate,
 )
 
+
+async def validate_recipe_exists(
+    db: AsyncSession,
+    recipe_id: int
+) -> None:
+    """
+    Проверяет, что рецепт с заданным ID существует.
+    Если нет — бросает HTTPException(404).
+    """
+    q = select(Recipe.id).where(Recipe.id == recipe_id)
+    if (await db.execute(q)).scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with id={recipe_id} not found"
+        )
+
+
 async def get_plan_by_id(
     db: AsyncSession,
     plan_id: int
-) -> MealPlan | None:
+) -> Optional[MealPlan]:
     """
-    Получить MealPlan по ID вместе с загруженными днями и рецептами.
+    Получить MealPlan вместе со всеми днями и привязанными рецептами.
     """
-    stmt = select(MealPlan).options(
-        joinedload(MealPlan.days).joinedload(DaySchedule.recipes)
-    ).where(MealPlan.id == plan_id)
-    result = await db.execute(stmt)
-    return result.unique().scalar_one_or_none()
+    stmt = (
+        select(MealPlan)
+        .options(
+            joinedload(MealPlan.days)
+            .joinedload(DaySchedule.recipes)
+            .joinedload(DayScheduleRecipe.recipe)
+        )
+        .where(MealPlan.id == plan_id)
+    )
+    res = await db.execute(stmt)
+    return res.unique().scalar_one_or_none()
+
+
 async def create_recipe_to_day(
     db: AsyncSession,
     plan_id: int,
@@ -30,11 +63,15 @@ async def create_recipe_to_day(
     payload: DayScheduleRecipeCreate
 ) -> DayScheduleRecipe:
     """
-    Создать новую привязку рецепта к дню плана.
-    Если день не существует — создаёт его.
-    Всегда ставит рецепт в конец: order = max(order)+1.
+    Создаёт новую привязку Recipe → DaySchedule:
+    - Проверяет, что рецепт существует.
+    - Создаёт или находит нужный DaySchedule.
+    - Проверяет уникальность `order`.
+    - Возвращает DayScheduleRecipe с предзагруженным recipe.
     """
-    # 1) Найти или создать DaySchedule
+    await validate_recipe_exists(db, payload.recipe_id)
+
+    # 1) найти или создать День
     stmt_day = select(DaySchedule).where(
         and_(
             DaySchedule.meal_plan_id == plan_id,
@@ -48,47 +85,67 @@ async def create_recipe_to_day(
         await db.commit()
         await db.refresh(day)
 
-    # 2) Вычислить следующий order
-    stmt_max = select(func.max(DayScheduleRecipe.order)).where(
-        DayScheduleRecipe.day_schedule_id == day.id
+    # 2) проверить конфликт по order
+    stmt_conf = select(DayScheduleRecipe).where(
+        and_(
+            DayScheduleRecipe.day_schedule_id == day.id,
+            DayScheduleRecipe.order == payload.order
+        )
     )
-    result = await db.execute(stmt_max)
-    max_order = result.scalar_one() or 0
-    new_order = max_order + 1
+    if (await db.execute(stmt_conf)).scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Conflict: порядок занят"
+        )
 
-    # 3) Создать привязку с вычисленным порядком
+    # 3) создать запись
     dsr = DayScheduleRecipe(
         day_schedule_id=day.id,
         recipe_id=payload.recipe_id,
-        order=new_order
+        order=payload.order
     )
     db.add(dsr)
     try:
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        # маловероятно, но на всякий случай
-        raise ValueError("Conflict: невозможно создать запись")
-    await db.refresh(dsr)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Невозможно создать привязку"
+        )
+
+    # 4) перезагрузить с joinedload recipe
+    stmt = select(DayScheduleRecipe).options(
+        joinedload(DayScheduleRecipe.recipe)
+    ).where(DayScheduleRecipe.id == dsr.id)
+    dsr = (await db.execute(stmt)).scalar_one()
     return dsr
+
 
 async def update_day_recipe(
     db: AsyncSession,
     plan_id: int,
     dsr_id: int,
     data: DayScheduleRecipeUpdate
-) -> DayScheduleRecipe | None:
+) -> Optional[DayScheduleRecipe]:
     """
-    Заменить только `recipe_id` в существующей записи.
+    Заменяет только `recipe_id` в существующей DayScheduleRecipe:
+    - Проверяет, что новый рецепт существует.
+    - Возвращает обновлённый объект с предзагруженным recipe.
     """
     if data.recipe_id is None:
-        return None
-
-    stmt = select(DayScheduleRecipe).join(DaySchedule).where(
-        and_(
-            DayScheduleRecipe.id == dsr_id,
-            DaySchedule.meal_plan_id == plan_id
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не указан новый recipe_id"
         )
+
+    await validate_recipe_exists(db, data.recipe_id)
+
+    stmt = (
+        select(DayScheduleRecipe)
+        .where(DayScheduleRecipe.id == dsr_id)
+        .join(DayScheduleRecipe.day)
+        .where(DaySchedule.meal_plan_id == plan_id)
     )
     dsr = (await db.execute(stmt)).scalar_one_or_none()
     if not dsr:
@@ -96,17 +153,22 @@ async def update_day_recipe(
 
     dsr.recipe_id = data.recipe_id
     await db.commit()
-    await db.refresh(dsr)
+
+    # перезагрузить с joinedload recipe
+    stmt = select(DayScheduleRecipe).options(
+        joinedload(DayScheduleRecipe.recipe)
+    ).where(DayScheduleRecipe.id == dsr.id)
+    dsr = (await db.execute(stmt)).scalar_one()
     return dsr
+
 
 async def delete_day_recipe(
     db: AsyncSession,
     plan_id: int,
     dsr_id: int
-) -> DayScheduleRecipe | None:
+) -> Optional[DayScheduleRecipe]:
     """
-    Удалить привязку рецепта к дню.
-    Возвращает удалённый объект или None.
+    Удаляет одну запись DayScheduleRecipe по её ID.
     """
     stmt = select(DayScheduleRecipe).join(DaySchedule).where(
         and_(
@@ -120,43 +182,45 @@ async def delete_day_recipe(
         await db.commit()
     return dsr
 
+
 async def get_days_with_recipes(
     db: AsyncSession,
     plan_id: int,
     start_date: date,
     end_date: date
-) -> list[DaySchedule]:
+) -> List[DaySchedule]:
     """
-    Получить список дней с предзагрузкой рецептов в интервале.
+    Возвращает все дни с вложенными рецептами (и сами объекты Recipe) за период.
     """
-    stmt = select(DaySchedule).options(
-        joinedload(DaySchedule.recipes)
-    ).where(
-        and_(
-            DaySchedule.meal_plan_id == plan_id,
-            DaySchedule.date.between(start_date, end_date)
+    stmt = (
+        select(DaySchedule)
+        .options(
+            joinedload(DaySchedule.recipes)
+            .joinedload(DayScheduleRecipe.recipe)
         )
-    ).order_by(DaySchedule.date)
-    result = await db.execute(stmt)
-    return result.scalars().unique().all()
-# src/services/mealplan.py
+        .where(
+            and_(
+                DaySchedule.meal_plan_id == plan_id,
+                DaySchedule.date.between(start_date, end_date)
+            )
+        )
+        .order_by(DaySchedule.date)
+    )
+    res = await db.execute(stmt)
+    return res.scalars().unique().all()
 
-from sqlalchemy import select, and_, update, case
-from sqlalchemy.orm import joinedload
-from sqlalchemy.ext.asyncio import AsyncSession
-from src.models.mealplan import DaySchedule, DayScheduleRecipe
 
 async def reorder_day_recipes(
     db: AsyncSession,
     plan_id: int,
     target_date: date,
-    new_order_ids: list[int]
-) -> list[DayScheduleRecipe] | None:
+    new_order_ids: List[int]
+) -> Optional[List[DayScheduleRecipe]]:
     """
-    Переупорядочить все записи рецептов для указанного дня.
-    Делается одним UPDATE ... CASE, чтобы не было UniqueViolationError.
+    Переставляет все DayScheduleRecipe в дне согласно полному списку их ID.
+    Загружает рецепты сразу через joinedload.
     """
-    # 1) Найти день
+    # найти день
     stmt_day = select(DaySchedule).where(
         and_(
             DaySchedule.meal_plan_id == plan_id,
@@ -167,33 +231,26 @@ async def reorder_day_recipes(
     if not day:
         return None
 
-    # 2) Проверить, что переданный список совпадает с существующими ID
-    stmt_recipes = select(DayScheduleRecipe.id).where(
-        DayScheduleRecipe.day_schedule_id == day.id
-    )
-    existing_ids = {r for (r,) in (await db.execute(stmt_recipes)).all()}
-    if set(new_order_ids) != existing_ids:
-        raise ValueError("orders должен содержать ровно все id рецептов этого дня")
+    # загрузить привязки сразу с recipe
+    stmt_rec = select(DayScheduleRecipe).options(
+        joinedload(DayScheduleRecipe.recipe)
+    ).where(DayScheduleRecipe.day_schedule_id == day.id)
+    existing = (await db.execute(stmt_rec)).scalars().all()
 
-    # 3) Собираем mapping id -> новый order
-    mapping = {rid: idx for idx, rid in enumerate(new_order_ids, start=1)}
+    ids_set = {r.id for r in existing}
+    if set(new_order_ids) != ids_set:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="orders должен содержать ровно все id"
+        )
 
-    # 4) Пачкой обновляем всё в одном запросе
-    stmt_update = (
-        update(DayScheduleRecipe)
-        .where(DayScheduleRecipe.day_schedule_id == day.id)
-        .values(order=case(mapping, value=DayScheduleRecipe.id))
-    )
-    await db.execute(stmt_update)
+    for idx, rid in enumerate(new_order_ids, start=1):
+        next(r for r in existing if r.id == rid).order = idx
+
     await db.commit()
-
-    # 5) Считываем результат и возвращаем в нужном порядке
-    stmt_result = (
-        select(DayScheduleRecipe)
-        .where(DayScheduleRecipe.day_schedule_id == day.id)
-    )
-    updated = (await db.execute(stmt_result)).scalars().all()
-    return sorted(updated, key=lambda r: r.order)
+    for r in existing:
+        await db.refresh(r)
+    return sorted(existing, key=lambda r: r.order)
 
 
 async def create_mealplan(
@@ -202,7 +259,7 @@ async def create_mealplan(
     obj_in: MealPlanCreate
 ) -> MealPlan:
     """
-    Создать новый план питания.
+    Создаёт новый MealPlan.
     """
     plan = MealPlan(user_id=user_id, name=obj_in.name)
     db.add(plan)
@@ -210,18 +267,26 @@ async def create_mealplan(
     await db.refresh(plan)
     return plan
 
+
 async def get_mealplans_for_user(
     db: AsyncSession,
     user_id: int
-) -> list[MealPlan]:
+) -> List[MealPlan]:
     """
-    Получить все планы пользователя с предзагрузкой дней и рецептов.
+    Возвращает все MealPlan пользователя с жадной загрузкой дней и рецептов.
     """
-    stmt = select(MealPlan).options(
-        joinedload(MealPlan.days).joinedload(DaySchedule.recipes)
-    ).where(MealPlan.user_id == user_id)
-    result = await db.execute(stmt)
-    return result.scalars().unique().all()
+    stmt = (
+        select(MealPlan)
+        .options(
+            joinedload(MealPlan.days)
+            .joinedload(DaySchedule.recipes)
+            .joinedload(DayScheduleRecipe.recipe)
+        )
+        .where(MealPlan.user_id == user_id)
+    )
+    res = await db.execute(stmt)
+    return res.scalars().unique().all()
+
 
 async def update_mealplan(
     db: AsyncSession,
@@ -229,7 +294,7 @@ async def update_mealplan(
     obj_in: MealPlanUpdate
 ) -> MealPlan:
     """
-    Обновить название плана.
+    Обновляет имя MealPlan.
     """
     if obj_in.name is not None:
         plan.name = obj_in.name
@@ -237,12 +302,13 @@ async def update_mealplan(
     await db.refresh(plan)
     return plan
 
+
 async def delete_mealplan(
     db: AsyncSession,
     plan: MealPlan
 ) -> MealPlan:
     """
-    Удалить план питания.
+    Удаляет MealPlan и всё, что к нему привязано.
     """
     await db.delete(plan)
     await db.commit()

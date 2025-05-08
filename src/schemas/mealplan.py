@@ -1,26 +1,29 @@
 
 
 from datetime import date
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional, Annotated
 
 
 class DayScheduleRecipeBase(BaseModel):
     recipe_id: int
+    order: int
+
 
 class DayScheduleRecipeCreate(DayScheduleRecipeBase):
     pass
 
 class DayScheduleRecipeRead(DayScheduleRecipeBase):
     id: int
-
-    order: int
+    recipe_title: Annotated[str, Field(..., description="Название связанного рецепта")]
+    preview: Annotated[Optional[str], Field(None, description="URL превью изображения рецепта")]
 
     class Config:
         from_attributes = True
 
 class DayScheduleBase(BaseModel):
     date: date
+
 
 class DayScheduleRead(DayScheduleBase):
     id: int

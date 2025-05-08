@@ -36,3 +36,13 @@ class DayScheduleRecipe(Base):
 
     day = relationship("DaySchedule", back_populates="recipes")
     recipe = relationship("Recipe")
+
+    @property
+    def recipe_title(self) -> str:
+        # Название рецепта
+        return self.recipe.title
+
+    @property
+    def preview(self) -> str | None:
+        # URL превью (photo_url) рецепта
+        return self.recipe.photo_url
